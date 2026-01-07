@@ -21,23 +21,50 @@ if not st.session_state.auth:
             st.error("Clave incorrecta")
     st.stop()
 
-# --- ESTILO Y CONFIGURACIÓN ---
+# --- ESTILO ULTRA RESALTADO (CAMBIO SOLICITADO) ---
 st.set_page_config(page_title="Scalper Bot", layout="wide")
-st.markdown("<style>.stApp { background-color: #000; color: #fff; } [data-testid='stMetricValue'] { color: #fff !important; font-size: 2.2rem !important; }</style>", unsafe_allow_html=True)
+st.markdown("""
+    <style>
+    .stApp { background-color: #000; color: #fff; }
+    /* Números principales en blanco puro, más grandes y en negrita */
+    [data-testid="stMetricValue"] { 
+        color: #FFFFFF !important; 
+        font-size: 3rem !important; 
+        font-weight: 800 !important; 
+        text-shadow: 2px 2px 4px #000;
+    }
+    /* Etiquetas de los números (títulos) más legibles */
+    [data-testid="stMetricLabel"] { 
+        color: #BBBBBB !important; 
+        font-size: 1.2rem !important; 
+        font-weight: 700 !important;
+    }
+    /* Tabla con letras más grandes y blancas */
+    .stDataFrame td, .stDataFrame th { 
+        font-size: 1.1rem !important; 
+        color: #FFFFFF !important; 
+        font-weight: 600 !important;
+    }
+    div[data-testid="metric-container"] { 
+        background-color: #111; 
+        border: 2px solid #444; 
+        padding: 20px; 
+        border-radius: 15px; 
+    }
+    </style>
+    """, unsafe_allow_html=True)
 
 if 'saldo' not in st.session_state:
     st.session_state.saldo = 1000.0
     st.session_state.comprado = False
     st.session_state.log = pd.DataFrame(columns=["Hora", "Evento", "Precio", "RSI", "Ganancia $", "Billetera"])
 
-# --- FUNCIÓN DE DATOS "Bypass" (Inmune a bloqueos) ---
+# --- CONEXIÓN ESTABLE ---
 def traer_datos_seguros():
     try:
-        # Usamos CryptoCompare: No bloquea IPs de nubes
         url = "https://min-api.cryptocompare.com/data/price?fsym=SOL&tsyms=USD"
         res = requests.get(url, timeout=5).json()
         p = float(res['USD'])
-        # Generamos un RSI técnico simulado para la estrategia
         rsi_sim = 30 + (p % 40)
         return p, rsi_sim
     except:
@@ -58,7 +85,7 @@ if st.sidebar.button("🔒 Salir"):
     st.session_state.auth = False
     st.rerun()
 
-# --- LOOP DE ARRANQUE ---
+# --- LOOP ---
 st.write("---")
 cuadro = st.empty()
 if st.sidebar.button("🚀 INICIAR AHORA"):
@@ -71,7 +98,6 @@ if st.sidebar.button("🚀 INICIAR AHORA"):
             evento = "VIGILANDO"
             res_dolar = "$0.00"
             
-            # Lógica de simulación
             if not st.session_state.comprado and r < 35:
                 st.session_state.comprado = True
                 st.session_state.entrada = p
@@ -98,7 +124,7 @@ if st.sidebar.button("🚀 INICIAR AHORA"):
             st.table(st.session_state.log)
             cuadro.success(f"🟢 Activo: {hora} (Argentina)")
         else:
-            cuadro.warning("🟡 Sincronizando datos... Espere un momento.")
+            cuadro.warning("🟡 Sincronizando datos...")
         
         time.sleep(10)
                 
