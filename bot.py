@@ -60,4 +60,33 @@ def obtener_datos_blindados(symbol):
 st.sidebar.header("⚙️ Ajustes de Estrategia")
 par = st.sidebar.text_input("Moneda", value="SOLUSDT").upper()
 tp_pct = st.sidebar.slider("Take Profit %", 0.1, 5.0, 0.8)
-sl_pct = st.sidebar.
+sl_pct = st.sidebar.slider("Stop Loss %", 0.1, 5.0, 2.0)
+btn = st.sidebar.button("🚀 INICIAR VIGILANCIA")
+
+if btn:
+    cuadro_estado.info("🛰️ Conectando con red global de Binance...")
+    while True:
+        p, r = obtener_datos_blindados(par)
+        if p:
+            # Cálculos
+            p_tp = p * (1 + (tp_pct/100))
+            p_sl = p * (1 - (sl_pct/100))
+            
+            # Actualizar Métricas
+            met_precio.metric(f"PRECIO {par}", f"${p:,.2f}")
+            met_rsi.metric("SENSOR RSI", f"{r:.2f}")
+            met_tp.metric("TAKE PROFIT (VERDE)", f"${p_tp:,.2f}")
+            met_sl.metric("STOP LOSS (ROJO)", f"${p_sl:,.2f}")
+            
+            # Lógica de Alerta y Registro
+            if r < 35:
+                sonar_alerta()
+                nuevo = {"Hora": time.strftime("%H:%M:%S"), "Evento": "Punto de Compra", "Precio": p, "RSI": r}
+                st.session_state.log = pd.concat([pd.DataFrame([nuevo]), st.session_state.log]).head(10)
+            
+            cuadro_estado.success(f"🟢 VIGILANDO EN VIVO: {par}")
+            tabla_historial.dataframe(st.session_state.log, use_container_width=True)
+        else:
+            cuadro_estado.error("🔴 Error de red. Intentando re-conexión automática...")
+        
+        time.sleep(10)
