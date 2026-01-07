@@ -3,31 +3,23 @@ import pandas as pd
 import requests
 import time
 
-# --- INTERFAZ NEGRA CON NÚMEROS BLANCOS ---
-st.set_page_config(page_title="Scalper Bot Pro - SIMULADOR", layout="wide")
+# --- INTERFAZ NEGRA PRO ---
+st.set_page_config(page_title="Scalper Bot Pro", layout="wide")
 st.markdown("""
     <style>
     .stApp { background-color: #000000; color: #FFFFFF; }
-    /* Forzamos que todos los números de métricas sean Blancos */
-    [data-testid="stMetricValue"] { 
-        color: #FFFFFF !important; 
-        font-family: 'Courier New', monospace; 
-        font-size: 2.2rem !important; 
-    }
-    div[data-testid="metric-container"] { 
-        background-color: #111; 
-        border: 1px solid #333; 
-        padding: 15px; 
-        border-radius: 12px; 
-    }
+    [data-testid="stMetricValue"] { color: #FFFFFF !important; font-family: 'Courier New', monospace; font-size: 2.2rem !important; }
+    div[data-testid="metric-container"] { background-color: #111; border: 1px solid #333; padding: 15px; border-radius: 12px; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- INICIALIZAR VARIABLES DE SESIÓN ---
+# --- INICIALIZACIÓN SEGURA ---
 if 'saldo_v' not in st.session_state:
     st.session_state.saldo_v = 1000.0
+if 'ganancia_sesion' not in st.session_state:
     st.session_state.ganancia_sesion = 0.0
-    st.session_state.log_v = pd.DataFrame(columns=["Hora", "Evento", "Precio", "Ganancia Día $"])
+if 'log_v' not in st.session_state:
+    st.session_state.log_v = pd.DataFrame(columns=["Hora", "Evento", "Precio", "P/L Sesión"])
 
 st.title("🤖 Centro de Mando: Simulación Pro")
 
@@ -42,14 +34,15 @@ st.write("---")
 cuadro_estado = st.empty()
 tabla_historial = st.empty()
 
-# --- CONEXIÓN MULTI-RUTA ---
-def obtener_datos_pro(symbol):
+# --- CONEXIÓN DE RESPALDO RÁPIDA ---
+def get_safe_price(symbol):
     try:
-        url = f"https://fapi.binance.com/fapi/v1/ticker/price?symbol={symbol}"
-        res = requests.get(url, timeout=5).json()
+        # Probamos primero la ruta de futuros (más estable)
+        res = requests.get(f"https://fapi.binance.com/fapi/v1/ticker/price?symbol={symbol}", timeout=5).json()
         return float(res['price']), "Binance"
     except:
         try:
+            # Respaldo inmediato si Binance falla
             coin = "solana" if "SOL" in symbol else "bitcoin"
             res = requests.get(f"https://api.coingecko.com/api/v3/simple/price?ids={coin}&vs_currencies=usd").json()
             return float(res[coin]['usd']), "Respaldo"
@@ -64,34 +57,30 @@ sl_p = st.sidebar.slider("Stop Loss %", 0.1, 5.0, 2.0)
 btn = st.sidebar.button("🚀 INICIAR")
 
 if btn:
+    cuadro_estado.info("🛰️ Sincronizando datos de mercado...")
     while True:
-        p, fuente = obtener_datos_pro(par)
+        p, fuente = get_safe_price(par)
         if p:
-            # Cálculos de niveles
-            val_tp = p * (1 + (tp_p/100))
-            val_sl = p * (1 - (sl_p/100))
+            # Cálculos
+            p_tp = p * (1 + (tp_p/100))
+            p_sl = p * (1 - (sl_p/100))
+            total_actual = st.session_state.saldo_v + st.session_state.ganancia_sesion
             
-            # Actualizar Tarjetas (Ahora en BLANCO)
+            # Actualizar tarjetas (Números Blancos)
             met_precio.metric(f"PRECIO {par}", f"${p:,.2f}")
-            met_tp.metric("OBJETIVO PROFIT", f"${val_tp:,.2f}")
-            met_sl.metric("STOP LOSS", f"${val_sl:,.2f}")
-            met_saldo.metric("SALDO + GANANCIA", f"${st.session_state.saldo_v + st.session_state.ganancia_sesion:,.2f}")
+            met_tp.metric("OBJETIVO PROFIT", f"${p_tp:,.2f}")
+            met_sl.metric("STOP LOSS", f"${p_sl:,.2f}")
+            met_saldo.metric("SALDO TOTAL", f"${total_actual:,.2f}")
             
-            # Lógica de Registro (Opción B)
-            if len(st.session_state.log_v) < 10:
-                # Simulación de un cierre de profit para ver el historial funcionar
-                if p >= val_tp: st.session_state.ganancia_sesion += 5.0 
-                
-                n = {"Hora": time.strftime("%H:%M:%S"), 
-                     "Evento": "VIGILANDO", 
-                     "Precio": p, 
-                     "Ganancia Día $": f"+${st.session_state.ganancia_sesion:.2f}"}
-                st.session_state.log_v = pd.concat([pd.DataFrame([n]), st.session_state.log_v]).head(10)
+            # Registro en historial (Vigilancia activa)
+            if len(st.session_state.log_v) < 1:
+                n = {"Hora": time.strftime("%H:%M:%S"), "Evento": "VIGILANDO", "Precio": p, "P/L Sesión": f"${st.session_state.ganancia_sesion:.2f}"}
+                st.session_state.log_v = pd.concat([pd.DataFrame([n]), st.session_state.log_v])
             
-            cuadro_estado.success(f"🟢 SISTEMA ACTIVO | Fuente: {fuente}")
+            cuadro_estado.success(f"🟢 EN LÍNEA | Fuente: {fuente}")
             tabla_historial.dataframe(st.session_state.log_v, use_container_width=True)
         else:
-            cuadro_estado.warning("🟡 Reconectando...")
+            cuadro_estado.warning("🟡 Buscando señal...")
             
         time.sleep(10)
         
