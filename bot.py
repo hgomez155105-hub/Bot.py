@@ -3,72 +3,78 @@ import pandas as pd
 import requests
 import time
 
-# --- DISEÑO OSCURO PRO ---
+# --- INTERFAZ OSCURA TOTAL ---
 st.set_page_config(page_title="Scalper Bot Pro - SIMULADOR", layout="wide")
 st.markdown("""
     <style>
     .stApp { background-color: #000000; color: #FFFFFF; }
-    [data-testid="stMetricValue"] { color: #00FF00 !important; font-family: 'Courier New', monospace; font-size: 2.5rem !important; }
-    div[data-testid="metric-container"] { background-color: #111; border: 1px solid #333; padding: 20px; border-radius: 15px; }
+    /* Colores para las tarjetas */
+    [data-testid="stMetricValue"] { font-family: 'Courier New', monospace; font-size: 1.8rem !important; }
+    div[data-testid="stMetric"]:nth-child(1) [data-testid="stMetricValue"] { color: #FFFFFF !important; } /* Precio */
+    div[data-testid="stMetric"]:nth-child(2) [data-testid="stMetricValue"] { color: #00FF00 !important; } /* Profit */
+    div[data-testid="stMetric"]:nth-child(3) [data-testid="stMetricValue"] { color: #FF3131 !important; } /* Stop */
+    div[data-testid="stMetric"]:nth-child(4) [data-testid="stMetricValue"] { color: #00D1FF !important; } /* Saldo */
+    div[data-testid="metric-container"] { background-color: #111; border: 1px solid #333; padding: 15px; border-radius: 12px; }
     </style>
     """, unsafe_allow_html=True)
 
-if 'saldo_usd' not in st.session_state:
-    st.session_state.saldo_usd = 1000.0
-    st.session_state.log_sim = pd.DataFrame(columns=["Hora", "Acción", "Precio", "RSI", "Resultado $"])
+if 'saldo_v' not in st.session_state:
+    st.session_state.saldo_v = 1000.0
+    st.session_state.log_v = pd.DataFrame(columns=["Hora", "Acción", "Precio", "Resultado $"])
 
 st.title("🤖 Simulador de Trading Real (Camino A)")
 
-# --- MÉTRICAS ---
-c1, c2, c3 = st.columns(3)
+# --- PANEL SUPERIOR DE 4 COLUMNAS ---
+c1, c2, c3, c4 = st.columns(4)
 met_precio = c1.empty()
-met_rsi = c2.empty()
-met_saldo = c3.empty()
+met_tp = c2.empty()
+met_sl = c3.empty()
+met_saldo = c4.empty()
 
 st.write("---")
 cuadro_estado = st.empty()
 tabla_historial = st.empty()
 
-# --- CONEXIÓN QUE NO SE BLOQUEA ---
-def obtener_precio_seguro(symbol):
+# --- CONEXIÓN DE ALTA ESTABILIDAD ---
+def get_data_v4(symbol):
+    # Usamos el servidor de datos de futuros que es más abierto
+    url = f"https://fapi.binance.com/fapi/v1/ticker/price?symbol={symbol}"
     try:
-        # Usamos una ruta alternativa (fapi) que suele estar abierta para simuladores
-        url = f"https://fapi.binance.com/fapi/v1/ticker/price?symbol={symbol}"
         res = requests.get(url, timeout=10).json()
-        p = float(res['price'])
-        # Generamos un RSI dinámico para el simulador
-        r = 30 + (p % 40)
-        return p, r
+        return float(res['price'])
     except:
-        # Si falla, usamos una API secundaria de respaldo
-        try:
-            res = requests.get(f"https://api.binance.com/api/v3/ticker/price?symbol={symbol}").json()
-            return float(res['price']), 50.0
-        except:
-            return None, None
+        return None
 
 # --- SIDEBAR ---
-st.sidebar.header("⚙️ Ajustes")
+st.sidebar.header("⚙️ Ajustes de Estrategia")
 par = st.sidebar.text_input("Moneda", value="SOLUSDT").upper()
+tp_p = st.sidebar.slider("Take Profit %", 0.1, 2.0, 0.8)
+sl_p = st.sidebar.slider("Stop Loss %", 0.1, 5.0, 2.0)
 btn = st.sidebar.button("🚀 INICIAR SIMULACIÓN")
 
 if btn:
-    cuadro_estado.success(f"🟢 CONEXIÓN ESTABLECIDA: {par}")
+    cuadro_estado.success(f"🟢 SISTEMA ACTIVADO: Monitoreando {par}")
     while True:
-        precio, rsi = obtener_precio_seguro(par)
-        if precio:
-            met_precio.metric(f"PRECIO {par}", f"${precio:,.2f}")
-            met_rsi.metric("SENSOR RSI", f"{rsi:.2f}")
-            met_saldo.metric("SALDO VIRTUAL", f"${st.session_state.saldo_usd:,.2f}")
+        p = get_data_v4(par)
+        if p:
+            # Cálculos de objetivos
+            val_tp = p * (1 + (tp_p/100))
+            val_sl = p * (1 - (sl_p/100))
             
-            # Registrar inicio en el historial
-            if len(st.session_state.log_sim) < 1:
-                nuevo = {"Hora": time.strftime("%H:%M:%S"), "Acción": "SISTEMA OK", "Precio": precio, "RSI": rsi, "Resultado $": 0}
-                st.session_state.log_sim = pd.concat([pd.DataFrame([nuevo]), st.session_state.log_sim])
+            # Actualizar tarjetas superiores
+            met_precio.metric(f"PRECIO {par}", f"${p:,.2f}")
+            met_tp.metric("OBJETIVO PROFIT", f"${val_tp:,.2f}")
+            met_sl.metric("STOP LOSS", f"${val_sl:,.2f}")
+            met_saldo.metric("SALDO VIRTUAL", f"${st.session_state.saldo_v:,.2f}")
             
-            tabla_historial.dataframe(st.session_state.log_sim, use_container_width=True)
+            # Registro automático inicial
+            if len(st.session_state.log_v) < 1:
+                nuevo = {"Hora": time.strftime("%H:%M:%S"), "Acción": "VIGILANCIA", "Precio": p, "Resultado $": 0}
+                st.session_state.log_v = pd.concat([pd.DataFrame([nuevo]), st.session_state.log_v])
+            
+            tabla_historial.dataframe(st.session_state.log_v, use_container_width=True)
         else:
-            cuadro_estado.warning("🟡 Reintentando conexión segura...")
-            
-        time.sleep(5)
+            cuadro_estado.warning("🟡 Reconectando con túnel de datos...")
+        
+        time.sleep(10)
         
