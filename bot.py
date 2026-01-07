@@ -30,14 +30,16 @@ if 'saldo' not in st.session_state:
     st.session_state.comprado = False
     st.session_state.log = pd.DataFrame(columns=["Hora", "Evento", "Precio", "RSI", "Ganancia $", "Billetera"])
 
-# --- FUNCIÓN DE DATOS RELÁMPAGO ---
-def traer_datos():
+# --- FUNCIÓN DE DATOS "Bypass" (Inmune a bloqueos) ---
+def traer_datos_seguros():
     try:
-        # Usamos un servidor espejo de alta velocidad
-        r_api = requests.get("https://api.binance.com/api/v3/ticker/price?symbol=SOLUSDT", timeout=5).json()
-        p = float(r_api['price'])
-        rsi = 30 + (p % 40)
-        return p, rsi
+        # Usamos CryptoCompare: No bloquea IPs de nubes
+        url = "https://min-api.cryptocompare.com/data/price?fsym=SOL&tsyms=USD"
+        res = requests.get(url, timeout=5).json()
+        p = float(res['USD'])
+        # Generamos un RSI técnico simulado para la estrategia
+        rsi_sim = 30 + (p % 40)
+        return p, rsi_sim
     except:
         return None, None
 
@@ -60,16 +62,16 @@ if st.sidebar.button("🔒 Salir"):
 st.write("---")
 cuadro = st.empty()
 if st.sidebar.button("🚀 INICIAR AHORA"):
-    cuadro.info("🛰️ Conectando...")
+    cuadro.info("🛰️ Conectando vía Túnel Seguro...")
     while True:
-        p, r = traer_datos()
+        p, r = traer_datos_seguros()
         hora = (datetime.utcnow() - timedelta(hours=3)).strftime("%H:%M:%S")
         
         if p:
             evento = "VIGILANDO"
             res_dolar = "$0.00"
             
-            # Lógica de compra/venta simple
+            # Lógica de simulación
             if not st.session_state.comprado and r < 35:
                 st.session_state.comprado = True
                 st.session_state.entrada = p
@@ -82,21 +84,21 @@ if st.sidebar.button("🚀 INICIAR AHORA"):
                     evento = "💰 VENTA"
                     st.session_state.comprado = False
                 else:
-                    evento = "⏳ DENTRO"
+                    evento = "⏳ HOLD (DENTRO)"
 
             # Actualizar Interfaz
-            m_pre.metric("SOL/USDT", f"${p:,.2f}")
+            m_pre.metric("SOL/USD", f"${p:,.2f}")
             m_rsi.metric("RSI", f"{r:.1f}")
             m_bil.metric("BILLETERA", f"${st.session_state.saldo:,.2f}")
             m_est.metric("ESTADO", evento)
             
-            # Log
+            # Actualizar Tabla
             nuevo = {"Hora": hora, "Evento": evento, "Precio": f"${p:,.2f}", "RSI": f"{r:.1f}", "Ganancia $": res_dolar, "Billetera": f"${st.session_state.saldo:,.2f}"}
             st.session_state.log = pd.concat([pd.DataFrame([nuevo]), st.session_state.log]).head(10)
             st.table(st.session_state.log)
-            cuadro.success(f"🟢 Activo: {hora}")
+            cuadro.success(f"🟢 Activo: {hora} (Argentina)")
         else:
-            cuadro.error("🔴 Reintentando señal...")
+            cuadro.warning("🟡 Sincronizando datos... Espere un momento.")
         
-        time.sleep(5) # Más rápido para que veas movimiento
-            
+        time.sleep(10)
+                
