@@ -117,4 +117,3 @@ if st.sidebar.button("🚀 INICIAR OPERACIÓN"):
         else:
             cuadro.warning("🟡 Sincronizando...")
             time.sleep(2)
-            
