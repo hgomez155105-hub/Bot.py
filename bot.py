@@ -116,3 +116,27 @@ if st.sidebar.button("🚀 INICIAR AHORA"):
                 evento = "🛒 COMPRA"
             elif st.session_state.comprado:
                 if p >= st.session_state.entrada * (1+(tp/100)) or p <= st.session_state.entrada * (1-(sl/100)):
+                    dif = (p - st.session_state.entrada) * 10
+                    st.session_state.saldo += dif
+                    res_dolar = f"${dif:.2f}"
+                    evento = "💰 VENTA"
+                    st.session_state.comprado = False
+                else:
+                    evento = "⏳ HOLD"
+
+            # Actualizar Interfaz (Método estable)
+            m_pre.metric("SOL/USD", f"${p:,.2f}")
+            m_rsi.metric("RSI", f"{r:.1f}")
+            m_bil.metric("BILLETERA", f"${st.session_state.saldo:,.2f}")
+            m_est.metric("ESTADO", evento)
+            
+            # Actualizar Tabla con nuevo estilo forzado
+            nuevo = {"Hora": hora, "Evento": evento, "Precio": f"${p:,.2f}", "RSI": f"{r:.1f}", "Ganancia $": res_dolar, "Billetera": f"${st.session_state.saldo:,.2f}"}
+            st.session_state.log = pd.concat([pd.DataFrame([nuevo]), st.session_state.log]).head(10)
+            
+            # Usamos st.table para que el diseño CSS sea más agresivo y se vea mejor
+            tabla_historial = st.table(st.session_state.log)
+            
+            cuadro.success(f"🟢 Activo: {hora} (Argentina)")
+            time.sleep(10)
+            # Limpiamos la tabla
