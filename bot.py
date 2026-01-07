@@ -21,33 +21,45 @@ if not st.session_state.auth:
             st.error("Clave incorrecta")
     st.stop()
 
-# --- ESTILO ULTRA RESALTADO (CAMBIO SOLICITADO) ---
+# --- ESTILO ULTRA RESALTADO (TABLA BLANCA) ---
 st.set_page_config(page_title="Scalper Bot", layout="wide")
 st.markdown("""
     <style>
     .stApp { background-color: #000; color: #fff; }
-    /* Números principales en blanco puro, más grandes y en negrita */
+    
+    /* Números de arriba (Métricas) */
     [data-testid="stMetricValue"] { 
         color: #FFFFFF !important; 
         font-size: 3rem !important; 
         font-weight: 800 !important; 
-        text-shadow: 2px 2px 4px #000;
     }
-    /* Etiquetas de los números (títulos) más legibles */
+    
+    /* Títulos de las Métricas */
     [data-testid="stMetricLabel"] { 
-        color: #BBBBBB !important; 
-        font-size: 1.2rem !important; 
+        color: #FFFFFF !important; 
+        font-size: 1.3rem !important; 
         font-weight: 700 !important;
     }
-    /* Tabla con letras más grandes y blancas */
-    .stDataFrame td, .stDataFrame th { 
-        font-size: 1.1rem !important; 
-        color: #FFFFFF !important; 
-        font-weight: 600 !important;
+
+    /* --- TABLA DE ABAJO TOTALMENTE BLANCA Y RESALTADA --- */
+    .stTable, [data-testid="stTable"] {
+        background-color: #111 !important;
+        color: #FFFFFF !important;
     }
+    
+    /* Forzar que cada celda de la tabla sea blanca y gruesa */
+    .stTable td, .stTable th, [data-testid="stTable"] td {
+        color: #FFFFFF !important;
+        font-size: 1.2rem !important;
+        font-weight: 800 !important;
+        border-bottom: 1px solid #444 !important;
+        padding: 12px !important;
+    }
+
+    /* Resaltar el contenedor de las métricas */
     div[data-testid="metric-container"] { 
         background-color: #111; 
-        border: 2px solid #444; 
+        border: 3px solid #555; 
         padding: 20px; 
         border-radius: 15px; 
     }
@@ -89,7 +101,7 @@ if st.sidebar.button("🔒 Salir"):
 st.write("---")
 cuadro = st.empty()
 if st.sidebar.button("🚀 INICIAR AHORA"):
-    cuadro.info("🛰️ Conectando vía Túnel Seguro...")
+    cuadro.info("🛰️ Conectando...")
     while True:
         p, r = traer_datos_seguros()
         hora = (datetime.utcnow() - timedelta(hours=3)).strftime("%H:%M:%S")
@@ -104,27 +116,3 @@ if st.sidebar.button("🚀 INICIAR AHORA"):
                 evento = "🛒 COMPRA"
             elif st.session_state.comprado:
                 if p >= st.session_state.entrada * (1+(tp/100)) or p <= st.session_state.entrada * (1-(sl/100)):
-                    dif = (p - st.session_state.entrada) * 10
-                    st.session_state.saldo += dif
-                    res_dolar = f"${dif:.2f}"
-                    evento = "💰 VENTA"
-                    st.session_state.comprado = False
-                else:
-                    evento = "⏳ HOLD (DENTRO)"
-
-            # Actualizar Interfaz
-            m_pre.metric("SOL/USD", f"${p:,.2f}")
-            m_rsi.metric("RSI", f"{r:.1f}")
-            m_bil.metric("BILLETERA", f"${st.session_state.saldo:,.2f}")
-            m_est.metric("ESTADO", evento)
-            
-            # Actualizar Tabla
-            nuevo = {"Hora": hora, "Evento": evento, "Precio": f"${p:,.2f}", "RSI": f"{r:.1f}", "Ganancia $": res_dolar, "Billetera": f"${st.session_state.saldo:,.2f}"}
-            st.session_state.log = pd.concat([pd.DataFrame([nuevo]), st.session_state.log]).head(10)
-            st.table(st.session_state.log)
-            cuadro.success(f"🟢 Activo: {hora} (Argentina)")
-        else:
-            cuadro.warning("🟡 Sincronizando datos...")
-        
-        time.sleep(10)
-                
