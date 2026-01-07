@@ -1,4 +1,4 @@
-          import streamlit as st
+import streamlit as st
 import pandas as pd
 import numpy as np
 import requests
@@ -63,18 +63,4 @@ if btn_inicio:
             st.sidebar.error("Reconectando con Binance...")
         
         time.sleep(10)
-        # Aquí iría tu función de obtener_rsi(par)
-                    rsi_simulado = 50.0 # Reemplazar con rsi_actual
-                    
-                    # ACTUALIZAR CONTADORES
-                    met_precio.metric("Precio Actual", f"${precio:,.2f}")
-                    met_rsi.metric("Sensor RSI", f"{rsi_simulado:.2f}")
-                    met_ganancia.metric("Ganancia Total", f"${ganancia_acumulada:.4f}")
-                else:
-                    st.sidebar.error(f"Error de Binance: {res.get('msg', 'Desconocido')}")
-                
-                time.sleep(10)
-            except Exception as e:
-                st.error(f"Error de conexión: {e}")
-                time.sleep(10)
-                
+              
