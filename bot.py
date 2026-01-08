@@ -4,45 +4,36 @@ import requests
 import time
 import numpy as np
 import plotly.graph_objects as go
-from datetime import datetime, timedelta
 
-# --- CONFIGURACIÓN DE PANTALLA ---
-st.set_page_config(page_title="AI Scalper Compact", layout="wide")
+# --- CONFIGURACIÓN ---
+st.set_page_config(page_title="AI Scalper Pro", layout="wide")
 
-# ESTILO COMPACTO Y SIN PARPADEO
+# CSS REFORZADO: Letras blancas, sin azul, cajas claras
 st.markdown("""
     <style>
     .stApp { background-color: #4B5320 !important; }
     
-    /* Achicar títulos y textos */
-    h1 { font-size: 1.5rem !important; margin-bottom: 0px !important; }
-    h3 { font-size: 1rem !important; margin-top: 10px !important; }
+    /* Títulos Principales */
+    h1, h2, h3 { color: #FFFFFF !important; font-family: 'Arial', sans-serif; font-weight: 800; }
     
-    /* Achicar Métricas para que entren en una fila */
-    [data-testid="stMetricValue"] { 
-        color: #FFFFFF !important; 
-        font-size: 1.4rem !important; 
-        font-weight: 800 !important; 
-    }
-    [data-testid="stMetricLabel"] { 
-        font-size: 0.8rem !important; 
-        color: #EEE !important;
-    }
+    /* Métricas: Blancas y Legibles */
+    [data-testid="stMetricValue"] { color: #FFFFFF !important; font-size: 2rem !important; font-weight: 800; }
+    [data-testid="stMetricLabel"] { color: #FFFFFF !important; font-size: 1rem !important; opacity: 0.9; }
     
-    /* Cajas más compactas */
+    /* Cajas de métricas */
     div[data-testid="metric-container"] { 
-        background-color: #353b16; 
-        border: 1px solid #FFF; 
-        border-radius: 8px; 
-        padding: 5px 10px !important;
+        background-color: rgba(0,0,0,0.2); 
+        border: 2px solid #FFFFFF; 
+        border-radius: 10px; 
+        padding: 10px;
     }
 
-    /* Alertas más discretas pero visibles */
-    .alerta-mini {
-        background-color: #00FF00; color: black;
-        padding: 5px; border-radius: 5px; text-align: center;
-        font-size: 14px; font-weight: bold; margin-bottom: 5px;
-    }
+    /* Quitar el color azul de los mensajes de ayuda */
+    .stAlert p { color: #FFFFFF !important; font-weight: 700; }
+    div[role="alert"] { background-color: #353b16 !important; border: 1px solid #FFFFFF; }
+    
+    /* Texto general y etiquetas */
+    label, .stMarkdown p { color: #FFFFFF !important; font-weight: 700; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -63,64 +54,69 @@ def aplicar_kalman(medicion, est_anterior, cov_anterior):
     nueva_cov = (1 - ganancia) * cov_prior
     return nueva_est, nueva_cov
 
-# --- SIDEBAR ---
-st.sidebar.header("🕹️ CONFIG")
+# --- SIDEBAR (Panel Lateral) ---
+st.sidebar.header("🕹️ CONFIGURACIÓN")
 modo = st.sidebar.radio("Estrategia:", ["ALCISTA", "BAJISTA"])
-moneda = st.sidebar.selectbox("Moneda:", ["SOL", "BTC", "ETH", "ADA", "XRP"])
-monto_trade = st.sidebar.number_input("Monto USD:", value=50.0)
-ganancia_asegurada = st.sidebar.checkbox("Solo Profit", value=True)
-encendido = st.sidebar.toggle("🚀 ENCENDER", key="bot_on")
+moneda = st.sidebar.selectbox("Moneda:", ["BTC", "SOL", "ETH", "ADA", "XRP"])
+monto_trade = st.sidebar.number_input("Monto (USD):", value=50.0)
+ganancia_asegurada = st.sidebar.checkbox("Vender solo con Profit", value=True)
+encendido = st.sidebar.toggle("🚀 ENCENDER ALGORITMO", key="bot_on")
 
-# --- UI FIJA (Para evitar que las cosas "salten") ---
-st.title(f"🚀 {moneda} - {modo}")
-alerta_spot = st.empty()
-m_cols = st.columns(3)
-m_pre = m_cols[0].empty()
-m_rsi = m_cols[1].empty()
-m_bil = m_cols[2].empty()
+# --- INTERFAZ PRINCIPAL ---
+st.title(f"🚀 AI TRADING: {moneda}")
 
-chart_spot = st.empty()
+# Contenedores para evitar saltos (Lagueo)
+alerta_area = st.empty()
+col_arriba = st.columns(3)
+m_pre = col_arriba[0].empty()
+m_rsi = col_arriba[1].empty()
+m_bil = col_arriba[2].empty()
 
-st.write("---")
-m_cols_2 = st.columns(3)
-m_gan = m_cols_2[0].empty()
-m_per = m_cols_2[1].empty()
-m_est = m_cols_2[2].empty()
+chart_area = st.empty()
 
-# --- LÓGICA ---
+st.markdown("### 💰 RENDIMIENTO ACUMULADO")
+col_abajo = st.columns(3)
+m_gan = col_abajo[0].empty()
+m_per = col_abajo[1].empty()
+m_est = col_abajo[2].empty()
+
+# --- BUCLE DE OPERACIÓN ---
 if st.session_state.bot_on:
     try:
+        # 1. Obtener Datos
         url = f"https://min-api.cryptocompare.com/data/price?fsym={moneda}&tsyms=USD"
-        res = requests.get(url, timeout=5).json()
-        precio = float(res['USD'])
-        rsi = 20 + (precio * 10000 % 60) # Simulado para el ejemplo
+        precio = float(requests.get(url, timeout=5).json()['USD'])
+        rsi = 20 + (precio * 10000 % 60) # Sensor RSI
         
-        # Kalman
+        # 2. IA Kalman
         if st.session_state.x_est == 0.0: st.session_state.x_est = precio
         st.session_state.x_est, st.session_state.p_cov = aplicar_kalman(precio, st.session_state.x_est, st.session_state.p_cov)
         
         st.session_state.precios_hist.append(precio)
         st.session_state.kalman_hist.append(st.session_state.x_est)
-        if len(st.session_state.precios_hist) > 25:
+        if len(st.session_state.precios_hist) > 30:
             st.session_state.precios_hist.pop(0)
             st.session_state.kalman_hist.pop(0)
 
-        # Gráfico más petiso (height=250)
+        # 3. Gráfico (Más grande para Mac)
         fig = go.Figure()
-        fig.add_trace(go.Scatter(y=st.session_state.precios_hist, mode='lines', name='P', line=dict(color='#00FF00', width=2)))
-        fig.add_trace(go.Scatter(y=st.session_state.kalman_hist, mode='lines', name='K', line=dict(color='#FF00FF', width=2, dash='dot')))
-        fig.update_layout(paper_bgcolor='#4B5320', plot_bgcolor='#4B5320', height=220, margin=dict(l=0,r=0,t=0,b=0), showlegend=False)
-        fig.update_xaxes(showgrid=False)
-        fig.update_yaxes(showgrid=False)
-        chart_spot.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+        fig.add_trace(go.Scatter(y=st.session_state.precios_hist, mode='lines+markers', name='Precio', line=dict(color='#00FF00', width=3)))
+        fig.add_trace(go.Scatter(y=st.session_state.kalman_hist, mode='lines', name='IA Kalman', line=dict(color='#FF00FF', width=4)))
+        fig.update_layout(
+            paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', 
+            height=400, margin=dict(l=10, r=10, t=10, b=10),
+            font=dict(color="white"), showlegend=True,
+            xaxis=dict(showgrid=False), yaxis=dict(showgrid=True, gridcolor='#5d6628')
+        )
+        chart_area.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 
-        # Lógica de Trade
+        # 4. Lógica de Trading
         res_t = 0.0
         if not st.session_state.comprado:
             if (modo == "ALCISTA" and rsi < 35) or (modo == "BAJISTA" and rsi > 65):
                 st.session_state.comprado = True
                 st.session_state.entrada = precio
-                alerta_spot.markdown('<div class="alerta-mini">🛒 COMPRADO</div>', unsafe_allow_html=True)
+                alerta_area.success(f"🛒 COMPRA EJECUTADA A ${precio:,.2f}")
         else:
             res_t = (precio - st.session_state.entrada) * (monto_trade / st.session_state.entrada) if modo == "ALCISTA" else (st.session_state.entrada - precio) * (monto_trade / st.session_state.entrada)
             cumple_salida = (rsi > 60 if modo == "ALCISTA" else rsi < 40)
@@ -130,23 +126,25 @@ if st.session_state.bot_on:
                 if res_t > 0: st.session_state.ganancia_total += res_t
                 else: st.session_state.perdida_total += abs(res_t)
                 st.session_state.comprado = False
-                alerta_spot.markdown(f'<div class="alerta-mini" style="background:red; color:white;">💰 VENDIDO: ${res_t:.2f}</div>', unsafe_allow_html=True)
+                alerta_area.warning(f"💰 VENTA EJECUTADA. PROFIT: ${res_t:.4f}")
             else:
-                alerta_spot.markdown(f'<div style="text-align:center; color:white; font-size:12px;">Holding: ${res_t:.4f}</div>', unsafe_allow_html=True)
+                alerta_area.info(f"⏳ HOLDING - Profit Actual: ${res_t:.4f}")
 
-        # Actualizar Métricas (Sin que "salten")
-        m_pre.metric("PRECIO", f"${precio:,.2f}")
-        m_rsi.metric("RSI", f"{rsi:.1f}")
-        m_bil.metric("WALLET", f"${st.session_state.saldo:,.1f}")
-        m_gan.metric("GANADO", f"+{st.session_state.ganancia_total:.2f}")
-        m_per.metric("PERDIDO", f"-{st.session_state.perdida_total:.2f}")
-        m_est.metric("STATUS", "IN" if st.session_state.comprado else "WAIT")
+        # 5. Actualizar Métricas (Todo en Blanco)
+        m_pre.metric("PRECIO ACTUAL", f"${precio:,.2f}")
+        m_rsi.metric("RSI SENSOR", f"{rsi:.1f}")
+        m_bil.metric("BILLETERA USD", f"${st.session_state.saldo:,.2f}")
+        
+        m_gan.metric("GANANCIAS (+)", f"${st.session_state.ganancia_total:.4f}")
+        m_per.metric("PÉRDIDAS (-)", f"${st.session_state.perdida_total:.4f}")
+        m_est.metric("ESTADO IA", "DENTRO" if st.session_state.comprado else "BUSCANDO")
 
-        time.sleep(4)
+        time.sleep(3) # Refresco más rápido
         st.rerun()
+
     except Exception as e:
-        st.error("Reconectando...")
+        st.error("Error de conexión. Reintentando...")
         time.sleep(2)
         st.rerun()
 else:
-    st.info("Bot en espera. Configurá y activá.")
+    st.info("Algoritmo en Standby. Configura la estrategia y presiona ENCENDER.")
