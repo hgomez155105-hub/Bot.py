@@ -130,5 +130,23 @@ if st.session_state.bot_on:
                 if res_t > 0: st.session_state.ganancia_total += res_t
                 else: st.session_state.perdida_total += abs(res_t)
                 st.session_state.comprado = False
-                alerta_spot.markdown(f'<div class="alerta-mini" style="background:red; color:white;">💰 VEND
-            
+                alerta_spot.markdown(f'<div class="alerta-mini" style="background:red; color:white;">💰 VENDIDO: ${res_t:.2f}</div>', unsafe_allow_html=True)
+            else:
+                alerta_spot.markdown(f'<div style="text-align:center; color:white; font-size:12px;">Holding: ${res_t:.4f}</div>', unsafe_allow_html=True)
+
+        # Actualizar Métricas (Sin que "salten")
+        m_pre.metric("PRECIO", f"${precio:,.2f}")
+        m_rsi.metric("RSI", f"{rsi:.1f}")
+        m_bil.metric("WALLET", f"${st.session_state.saldo:,.1f}")
+        m_gan.metric("GANADO", f"+{st.session_state.ganancia_total:.2f}")
+        m_per.metric("PERDIDO", f"-{st.session_state.perdida_total:.2f}")
+        m_est.metric("STATUS", "IN" if st.session_state.comprado else "WAIT")
+
+        time.sleep(4)
+        st.rerun()
+    except Exception as e:
+        st.error("Reconectando...")
+        time.sleep(2)
+        st.rerun()
+else:
+    st.info("Bot en espera. Configurá y activá.")
