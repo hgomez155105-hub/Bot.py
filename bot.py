@@ -114,4 +114,28 @@ if st.session_state.bot_activo:
                 if not ganancia_asegurada or res_t > 0 or alcanzo_sl:
                     st.session_state.saldo += res_t
                     if res_t > 0: st.session_state.ganancia_total += res_t
-                    else: st.session_state.perdida_total += abs(res
+                    else: st.session_state.perdida_total += abs(res_t)
+                    st.session_state.comprado = False
+                    evento = "💰 VENTA"
+                else:
+                    evento = "⏳ HOLD (Protección)"
+            else:
+                evento = "🎯 DENTRO"
+
+        # Historial
+        hora = (datetime.utcnow() - timedelta(hours=3)).strftime("%H:%M:%S")
+        nuevo_log = pd.DataFrame([{"Hora": hora, "Evento": evento, "Precio": f"${precio:,.2f}", "Resultado": f"${res_t:.4f}"}])
+        st.session_state.log_df = pd.concat([nuevo_log, st.session_state.log_df]).head(8)
+
+        st.markdown("### 📋 LOG DE OPERACIONES")
+        st.table(st.session_state.log_df)
+
+        time.sleep(4)
+        st.rerun()
+
+    except Exception as e:
+        st.error(f"Error: {e}")
+        time.sleep(2)
+        st.rerun()
+else:
+    st.info("👋 Bot en Standby. Ajustá los parámetros y encendé el algoritmo.")
