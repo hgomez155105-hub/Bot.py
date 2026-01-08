@@ -20,15 +20,13 @@ if not st.session_state.auth:
             st.error("Clave incorrecta")
     st.stop()
 
-# --- ESTILO COMPACTO ---
-st.set_page_config(page_title="Scalper Bot Pro", layout="wide")
+# --- ESTILO ---
+st.set_page_config(page_title="Ultra Scalper", layout="wide")
 st.markdown("""
     <style>
     .stApp { background-color: #000; color: #fff; }
-    [data-testid="stMetricValue"] { color: #FFFFFF !important; font-size: 1.6rem !important; font-weight: 400 !important; }
-    [data-testid="stMetricLabel"] { color: #CCCCCC !important; font-size: 0.85rem !important; }
-    .stTable, [data-testid="stTable"] td { color: #FFFFFF !important; font-size: 0.9rem !important; font-weight: 600 !important; }
-    div[data-testid="metric-container"] { background-color: #111; border: 1px solid #333; padding: 10px; border-radius: 8px; }
+    [data-testid="stMetricValue"] { color: #00FF00 !important; font-size: 1.8rem !important; }
+    div[data-testid="metric-container"] { background-color: #111; border: 1px solid #222; border-radius: 10px; padding: 10px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -39,115 +37,78 @@ if 'log' not in st.session_state:
     st.session_state.log = pd.DataFrame(columns=["Hora", "Evento", "Precio", "RSI", "Ganancia", "Billetera"])
 if 'comprado' not in st.session_state:
     st.session_state.comprado = False
-    st.session_state.entrada = 0.0
-    st.session_state.stop_fijo = 0.0
-if 'moneda_actual' not in st.session_state:
-    st.session_state.moneda_actual = "SOL"
 
-# --- SIDEBAR (CONTROLES MANUALES) ---
-st.sidebar.header("⚙️ Configuración Pro")
-moneda_nueva = st.sidebar.selectbox("Seleccionar Moneda:", ["SOL", "BTC", "ETH", "ADA", "XRP", "DOT"])
-
-if moneda_nueva != st.session_state.moneda_actual:
-    st.session_state.moneda_actual = moneda_nueva
-    st.session_state.comprado = False 
-    st.rerun()
-
-# 1. CAMBIO DE MONTO MANUAL
-monto_trade = st.sidebar.number_input("Monto por Operación (USD):", min_value=1.0, max_value=1000.0, value=10.0, step=1.0)
-
-# 2. RSI REGULABLE MANUAL
-st.sidebar.write("---")
-st.sidebar.write("**Niveles de RSI**")
-rsi_compra = st.sidebar.slider("RSI Compra (Entrada):", 10, 50, 30)
-rsi_venta = st.sidebar.slider("RSI Venta (Salida):", 51, 90, 60)
+# --- SIDEBAR: CONFIGURACIÓN AGRESIVA ---
+st.sidebar.header("🚀 Modo Agresivo")
+moneda = st.sidebar.selectbox("Moneda:", ["SOL", "BTC", "ETH", "ADA", "XRP", "DOT"])
+monto_operacion = st.sidebar.number_input("Inversión por Trade (USD):", value=10.0)
 
 st.sidebar.write("---")
-sl_p = st.sidebar.slider("Stop Loss % (Seguridad)", 0.1, 10.0, 2.0)
-encendido = st.sidebar.toggle("🚀 ACTIVAR BOT", value=False)
+# Para que sea rápido como Pionex, el rango de RSI debe ser más corto
+rsi_in = st.sidebar.slider("RSI Compra (Entrar rápido):", 10, 50, 45)
+rsi_out = st.sidebar.slider("RSI Venta (Salir rápido):", 51, 90, 55)
 
-if st.sidebar.button("🗑️ Limpiar Historial"):
-    st.session_state.log = pd.DataFrame(columns=["Hora", "Evento", "Precio", "RSI", "Ganancia", "Billetera"])
-    st.rerun()
+sl = st.sidebar.slider("Stop Loss %", 0.1, 2.0, 1.0)
+velocidad = st.sidebar.select_slider("Frecuencia de escaneo:", options=[2, 5, 10, 15], value=5)
+encendido = st.sidebar.toggle("⚡ INICIAR SCALPING", value=False)
 
-# --- DATOS ---
-def traer_datos(symbol):
+# --- LÓGICA DE PRECIOS ---
+def obtener_datos(sim):
     try:
-        url = f"https://min-api.cryptocompare.com/data/price?fsym={symbol}&tsyms=USD"
-        res = requests.get(url, timeout=5).json()
-        p = float(res['USD'])
-        # Simulación dinámica para pruebas
-        rsi_sim = 20 + (p * 100 % 65) 
-        return p, rsi_sim
+        url = f"https://min-api.cryptocompare.com/data/price?fsym={sim}&tsyms=USD"
+        p = requests.get(url).json()['USD']
+        # Simulación de RSI más volátil para generar más trades
+        rsi = 20 + (p * 10000 % 60) 
+        return float(p), float(rsi)
     except: return None, None
 
-# --- PANEL PRINCIPAL ---
-st.title(f"🤖 Scalper Pro: {st.session_state.moneda_actual}")
+# --- UI ---
+st.title(f"⚡ Ultra Scalper: {moneda}")
+col1, col2, col3 = st.columns(3)
+m_pre = col1.empty()
+m_rsi = col2.empty()
+m_bil = col3.empty()
 
-c1, c2, c3, c4 = st.columns(4)
-m_pre = c1.empty()
-m_rsi = c2.empty()
-m_bil = c3.empty()
-m_est = c4.empty()
-
-st.write(f"### Estrategia: {rsi_compra} RSI / {rsi_venta} RSI")
-c5, c6 = st.columns(2)
-m_objetivo = c5.empty()
-m_stop = c6.empty()
-
-st.write("---")
-cuadro_estado = st.empty()
-
-# --- LÓGICA ---
+# --- BUCLE ---
 if encendido:
-    p, r = traer_datos(st.session_state.moneda_actual)
+    precio, rsi = obtener_datos(moneda)
     hora = (datetime.utcnow() - timedelta(hours=3)).strftime("%H:%M:%S")
-    
-    if p:
+
+    if precio:
         evento = "VIGILANDO"
-        res_dolar = "$0.00"
+        ganancia_str = "$0.00"
+
+        # COMPRA
+        if not st.session_state.comprado and rsi <= rsi_in:
+            st.session_state.comprado = True
+            st.session_state.entrada = precio
+            st.session_state.stop = precio * (1 - (sl/100))
+            evento = "🛒 COMPRA"
         
-        # 1. COMPRA (Usa el valor manual rsi_compra)
-        if not st.session_state.comprado:
-            if r <= rsi_compra:
-                st.session_state.comprado = True
-                st.session_state.entrada = p
-                st.session_state.stop_fijo = p * (1 - (sl_p/100))
-                evento = f"🛒 COMPRA (${monto_trade})"
-        
-        # 2. VENTA (Usa el valor manual rsi_venta)
-        else:
-            if r >= rsi_venta:
-                dif = (p - st.session_state.entrada) * (monto_trade/st.session_state.entrada)
-                st.session_state.saldo += dif
-                res_dolar = f"+${dif:.2f}"
-                evento = f"💰 PROFIT (RSI > {rsi_venta})"
-                st.session_state.comprado = False
-            elif p <= st.session_state.stop_fijo:
-                dif = (p - st.session_state.entrada) * (monto_trade/st.session_state.entrada)
-                st.session_state.saldo += dif
-                res_dolar = f"${dif:.2f}"
-                evento = "📉 STOP LOSS"
+        # VENTA
+        elif st.session_state.comprado:
+            if rsi >= rsi_out or precio <= st.session_state.stop:
+                # Calculo de ganancia
+                resultado = (precio - st.session_state.entrada) * (monto_operacion / st.session_state.entrada)
+                st.session_state.saldo += resultado
+                ganancia_str = f"{'+' if resultado > 0 else ''}${resultado:.4f}"
+                evento = "💰 VENTA PROFIT" if resultado > 0 else "📉 VENTA STOP"
                 st.session_state.comprado = False
             else:
-                evento = f"⏳ HOLD (Invertido: ${monto_trade})"
+                evento = "⏳ HOLD"
 
-        # Actualizar UI
-        m_pre.metric("PRECIO ACTUAL", f"${p:,.2f}")
-        m_rsi.metric("SENSOR RSI", f"{r:.1f}")
-        m_bil.metric("SALDO TOTAL", f"${st.session_state.saldo:,.2f}")
-        m_est.metric("ESTADO BOT", evento)
-        
-        m_objetivo.metric("META DE SALIDA", f"RSI > {rsi_venta}")
-        m_stop.metric("STOP LOSS ACTIVO", f"${st.session_state.stop_fijo:,.2f}" if st.session_state.comprado else "ESPERANDO...")
-        
-        nuevo = {"Hora": hora, "Evento": evento, "Precio": f"${p:,.2f}", "RSI": f"{r:.1f}", "Ganancia": res_dolar, "Billetera": f"${st.session_state.saldo:,.2f}"}
-        st.session_state.log = pd.concat([pd.DataFrame([nuevo]), st.session_state.log]).head(10)
+        # Update visual
+        m_pre.metric("PRECIO", f"${precio:,.2f}")
+        m_rsi.metric("RSI ACTUAL", f"{rsi:.1f}")
+        m_bil.metric("BILLETERA", f"${st.session_state.saldo:,.2f}")
+
+        # Historial
+        nuevo_log = {"Hora": hora, "Evento": evento, "Precio": precio, "RSI": f"{rsi:.1f}", "Ganancia": ganancia_str, "Billetera": f"${st.session_state.saldo:,.2f}"}
+        st.session_state.log = pd.concat([pd.DataFrame([nuevo_log]), st.session_state.log]).head(10)
         st.table(st.session_state.log)
-        
-        cuadro_estado.success(f"🟢 Conectado | Monto: ${monto_trade} | RSI: {rsi_compra}-{rsi_venta} | {hora}")
-        
-        time.sleep(10)
+
+        time.sleep(velocidad)
         st.rerun()
 else:
-    cuadro_estado.warning("🔴 Bot Apagado.")
+    st.info("Bot en espera. Ajustá el RSI a un rango más corto (ej. 45/55) para más trades.")
+        
