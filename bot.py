@@ -4,11 +4,12 @@ import requests
 import time
 import numpy as np
 import plotly.graph_objects as go
+from datetime import datetime, timedelta
 
 # --- CONFIGURACIÓN ---
-st.set_page_config(page_title="AI Scalper Pro Mac", layout="wide")
+st.set_page_config(page_title="AI Scalper Pro Historial", layout="wide")
 
-# CSS: Blanco puro sobre Verde Militar
+# CSS: Blanco sobre Verde Militar (Sin azul)
 st.markdown("""
     <style>
     .stApp { background-color: #4B5320 !important; }
@@ -17,15 +18,18 @@ st.markdown("""
     div[data-testid="metric-container"] { 
         background-color: rgba(0,0,0,0.3); border: 2px solid #FFFFFF; border-radius: 12px; padding: 15px;
     }
+    /* Estilo para la Tabla */
+    .stTable td, .stTable th { color: #FFFFFF !important; background-color: #353b16 !important; border: 1px solid #FFF !important; }
     </style>
     """, unsafe_allow_html=True)
 
 # --- INICIALIZACIÓN ---
-if 'precios_hist' not in st.session_state:
+if 'log_df' not in st.session_state:
     st.session_state.update({
         'saldo': 1000.0, 'ganancia_total': 0.0, 'perdida_total': 0.0,
         'precios_hist': [], 'kalman_hist': [], 'comprado': False,
-        'x_est': 0.0, 'p_cov': 1.0, 'entrada': 0.0
+        'x_est': 0.0, 'p_cov': 1.0, 'entrada': 0.0,
+        'log_df': pd.DataFrame(columns=["Hora", "Evento", "Precio", "Resultado"])
     })
 
 def aplicar_kalman(medicion, est_anterior, cov_anterior):
@@ -45,59 +49,48 @@ monto_trade = st.sidebar.number_input("Monto (USD):", value=50.0)
 encendido = st.sidebar.toggle("🚀 ENCENDER BOT", key="bot_activo")
 
 # --- UI PRINCIPAL ---
-st.title(f"📊 SISTEMA AI: {moneda} ({modo})")
+st.title(f"📊 SISTEMA AI: {moneda}")
 
 if st.session_state.bot_activo:
-    # 1. Intentar traer el precio primero
     try:
+        # Traer precio
         url = f"https://min-api.cryptocompare.com/data/price?fsym={moneda}&tsyms=USD"
-        response = requests.get(url, timeout=10)
-        data = response.json()
+        precio = float(requests.get(url, timeout=10).json()['USD'])
+        rsi = 20 + (precio * 10000 % 60)
         
-        if 'USD' in data:
-            precio = float(data['USD'])
-            rsi = 20 + (precio * 10000 % 60)
-            
-            # Kalman
-            if st.session_state.x_est == 0.0: st.session_state.x_est = precio
-            st.session_state.x_est, st.session_state.p_cov = aplicar_kalman(precio, st.session_state.x_est, st.session_state.p_cov)
-            
-            st.session_state.precios_hist.append(precio)
-            st.session_state.kalman_hist.append(st.session_state.x_est)
-            if len(st.session_state.precios_hist) > 40:
-                st.session_state.precios_hist.pop(0)
-                st.session_state.kalman_hist.pop(0)
+        # Kalman
+        if st.session_state.x_est == 0.0: st.session_state.x_est = precio
+        st.session_state.x_est, st.session_state.p_cov = aplicar_kalman(precio, st.session_state.x_est, st.session_state.p_cov)
+        
+        st.session_state.precios_hist.append(precio)
+        st.session_state.kalman_hist.append(st.session_state.x_est)
+        
+        # UI de métricas
+        c1, c2, c3 = st.columns(3)
+        c1.metric("PRECIO", f"${precio:,.2f}")
+        c2.metric("RSI", f"{rsi:.1f}")
+        c3.metric("BILLETERA", f"${st.session_state.saldo:,.2f}")
 
-            # --- DIBUJAR TODO ---
-            c1, c2, c3 = st.columns(3)
-            c1.metric("PRECIO", f"${precio:,.2f}")
-            c2.metric("RSI", f"{rsi:.1f}")
-            c3.metric("BILLETERA", f"${st.session_state.saldo:,.2f}")
-            
-            # Gráfico
+        # Gráfico
+        if len(st.session_state.precios_hist) > 1:
             fig = go.Figure()
             fig.add_trace(go.Scatter(y=st.session_state.precios_hist, mode='lines+markers', name='Precio', line=dict(color='#00FF00', width=3)))
             fig.add_trace(go.Scatter(y=st.session_state.kalman_hist, mode='lines', name='IA Kalman', line=dict(color='#FF00FF', width=4)))
-            fig.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', height=350, font=dict(color="white"), margin=dict(l=0,r=0,t=0,b=0))
+            fig.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', height=300, font=dict(color="white"), margin=dict(l=0,r=0,t=0,b=0))
             st.plotly_chart(fig, use_container_width=True)
 
-            # Estado
-            if st.session_state.comprado:
-                res_t = (precio - st.session_state.entrada) * (monto_trade / st.session_state.entrada) if modo == "ALCISTA" else (st.session_state.entrada - precio) * (monto_trade / st.session_state.entrada)
-                st.warning(f"🎯 DENTRO - Profit: ${res_t:.4f}")
-            else:
-                st.success("🔎 BUSCANDO ENTRADA...")
-
-            time.sleep(4)
-            st.rerun()
+        # Lógica de Trade y Tabla de Historial
+        evento = "VIGILANDO"
+        res_t = 0.0
+        if not st.session_state.comprado:
+            if (modo == "ALCISTA" and rsi < 35) or (modo == "BAJISTA" and rsi > 65):
+                st.session_state.comprado = True
+                st.session_state.entrada = precio
+                evento = "🛒 COMPRA"
         else:
-            st.error(f"Error en datos: {data}")
-            time.sleep(5)
-            st.rerun()
+            res_t = (precio - st.session_state.entrada) * (monto_trade / st.session_state.entrada) if modo == "ALCISTA" else (st.session_state.entrada - precio) * (monto_trade / st.session_state.entrada)
+            evento = "⏳ DENTRO"
 
-    except Exception as e:
-        st.error(f"⚠️ Error de Conexión: {e}")
-        time.sleep(5)
-        st.rerun()
-else:
-    st.info("👋 Bot apagado. Encendelo desde el panel lateral.")
+        # Actualizar la tabla de historial
+        hora =
+        
