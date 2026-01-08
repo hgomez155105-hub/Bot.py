@@ -115,4 +115,47 @@ if encendido:
     hora = (datetime.utcnow() - timedelta(hours=3)).strftime("%H:%M:%S")
 
     if precio:
-        evento = "👀 VIGILANDO
+        evento = "👀 VIGILANDO"
+        ganancia_str = "$0.00"
+
+        # COMPRA
+        if not st.session_state.comprado:
+            if rsi <= rsi_in:
+                st.session_state.comprado = True
+                st.session_state.entrada = precio
+                st.session_state.stop = precio * (1 - (sl/100))
+                evento = "🛒 COMPRA"
+        
+        # VENTA
+        else:
+            if rsi >= rsi_out:
+                resultado = (precio - st.session_state.entrada) * (monto_operacion / st.session_state.entrada)
+                st.session_state.saldo += resultado
+                ganancia_str = f"🟢 +${resultado:.4f}"
+                evento = "💰 VENTA PROFIT"
+                st.session_state.comprado = False
+            elif precio <= st.session_state.stop:
+                resultado = (precio - st.session_state.entrada) * (monto_operacion / st.session_state.entrada)
+                st.session_state.saldo += resultado
+                ganancia_str = f"🔴 ${resultado:.4f}"
+                evento = "📉 VENTA STOP"
+                st.session_state.comprado = False
+            else:
+                evento = f"⏳ HOLD (In: ${st.session_state.entrada:,.2f})"
+
+        # Actualizar visuales con el nuevo estilo
+        m_pre.metric("PRECIO", f"${precio:,.2f}")
+        m_rsi.metric("RSI", f"{rsi:.1f}")
+        m_bil.metric("BILLETERA", f"${st.session_state.saldo:,.2f}")
+
+        # Historial
+        nuevo_log = {"Hora": hora, "Evento": evento, "Precio": f"${precio:,.2f}", "RSI": f"{rsi:.1f}", "Ganancia": ganancia_str, "Billetera": f"${st.session_state.saldo:,.2f}"}
+        st.session_state.log = pd.concat([pd.DataFrame([nuevo_log]), st.session_state.log]).head(10)
+        st.table(st.session_state.log)
+
+        cuadro_estado.success(f"CONECTADO | {moneda} | {hora}")
+        time.sleep(velocidad)
+        st.rerun()
+else:
+    cuadro_estado.warning("BOT APAGADO")
+    
