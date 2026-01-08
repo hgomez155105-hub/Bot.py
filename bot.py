@@ -39,14 +39,24 @@ if 'log' not in st.session_state:
     st.session_state.log = pd.DataFrame(columns=["Hora", "Evento", "Precio", "RSI", "Ganancia $", "Billetera"])
 if 'comprado' not in st.session_state:
     st.session_state.comprado = False
+    st.session_state.entrada = 0.0
+    st.session_state.target_fijo = 0.0
+    st.session_state.stop_fijo = 0.0
+if 'moneda_actual' not in st.session_state:
+    st.session_state.moneda_actual = "SOL"
 
-# --- SIDEBAR AJUSTADA ---
+# --- SIDEBAR (INTERACTIVO) ---
 st.sidebar.header("⚙️ Configuración")
-moneda_nueva = st.sidebar.selectbox("Seleccionar Moneda:", ["SOL", "BTC", "ETH", "ADA", "XRP"])
+# Si cambias la moneda, el bot se entera al instante
+moneda_nueva = st.sidebar.selectbox("Seleccionar Moneda:", ["SOL", "BTC", "ETH", "ADA", "XRP", "DOT", "MATIC"], index=0)
 
-# NUEVO: Monto por operación
-monto_trade = st.sidebar.number_input("Monto por Trade (USD):", min_value=1.0, max_value=1000.0, value=10.0)
+# Reset si cambia la moneda manualmente
+if moneda_nueva != st.session_state.moneda_actual:
+    st.session_state.moneda_actual = moneda_nueva
+    st.session_state.comprado = False # Cerramos trade por seguridad al cambiar activo
+    st.rerun()
 
+monto_trade = st.sidebar.number_input("Monto por Trade (USD):", min_value=1.0, value=10.0)
 tp_p = st.sidebar.slider("Profit %", 0.1, 2.0, 0.8)
 sl_p = st.sidebar.slider("Loss %", 0.1, 5.0, 2.0)
 encendido = st.sidebar.toggle("🚀 ACTIVAR BOT", value=False)
@@ -66,15 +76,14 @@ def traer_datos(symbol):
     except: return None, None
 
 # --- PANEL PRINCIPAL ---
-st.title(f"🤖 Monitor: {moneda_nueva}")
-
+st.title(f"🤖 Monitor: {st.session_state.moneda_actual}")
 c1, c2, c3, c4 = st.columns(4)
 m_pre = c1.empty()
 m_rsi = c2.empty()
 m_bil = c3.empty()
 m_est = c4.empty()
 
-st.write(f"### Niveles de Salida (Trade de ${monto_trade})")
+st.write("### Niveles de Ejecución (Fijos)")
 c5, c6 = st.columns(2)
 m_target = c5.empty()
 m_stop = c6.empty()
@@ -82,53 +91,48 @@ m_stop = c6.empty()
 st.write("---")
 cuadro = st.empty()
 
-# --- EJECUCIÓN ---
+# --- LÓGICA DE EJECUCIÓN (SIN WHILE TRUE PARA EVITAR LAG) ---
 if encendido:
-    p, r = traer_datos(moneda_nueva)
+    p, r = traer_datos(st.session_state.moneda_actual)
     hora = (datetime.utcnow() - timedelta(hours=3)).strftime("%H:%M:%S")
     
     if p:
-        v_target = p * (1 + (tp_p/100))
-        v_stop = p * (1 - (sl_p/100))
-        
         evento = "VIGILANDO"
         res_dolar = "$0.00"
         
-        # Lógica con Monto Específico
+        # 1. COMPRA
         if not st.session_state.comprado and r < 35:
             st.session_state.comprado = True
             st.session_state.entrada = p
+            st.session_state.target_fijo = p * (1 + (tp_p/100))
+            st.session_state.stop_fijo = p * (1 - (sl_p/100))
             evento = f"🛒 COMPRA (${monto_trade})"
+        
+        # 2. VENTA
         elif st.session_state.comprado:
-            target_real = st.session_state.entrada * (1 + (tp_p/100))
-            stop_real = st.session_state.entrada * (1 - (sl_p/100))
-            
-            if p >= target_real or p <= stop_real:
-                # Calculamos la ganancia basada SOLO en el monto del trade
-                cantidad_comprada = monto_trade / st.session_state.entrada
-                dif = (p - st.session_state.entrada) * cantidad_comprada
+            if p >= st.session_state.target_fijo:
+                dif = (p - st.session_state.entrada) * (monto_trade/st.session_state.entrada)
                 st.session_state.saldo += dif
-                res_dolar = f"{'+' if dif > 0 else ''}${dif:.2f}"
-                evento = "💰 VENTA PROFIT" if dif > 0 else "📉 VENTA STOP"
+                res_dolar = f"+${dif:.2f}"
+                evento = "💰 VENTA PROFIT"
+                st.session_state.comprado = False
+            elif p <= st.session_state.stop_fijo:
+                dif = (p - st.session_state.entrada) * (monto_trade/st.session_state.entrada)
+                st.session_state.saldo += dif
+                res_dolar = f"${dif:.2f}"
+                evento = "📉 VENTA STOP"
                 st.session_state.comprado = False
             else:
-                evento = "⏳ HOLD (DENTRO)"
+                evento = f"⏳ HOLD (${st.session_state.entrada:,.2f})"
 
-        m_pre.metric(f"PRECIO {moneda_nueva}", f"${p:,.2f}")
+        # Mostrar métricas
+        m_pre.metric(f"PRECIO {st.session_state.moneda_actual}", f"${p:,.2f}")
         m_rsi.metric("SENSOR RSI", f"{r:.1f}")
         m_bil.metric("BILLETERA USD", f"${st.session_state.saldo:,.2f}")
         m_est.metric("ESTADO", evento)
         
-        m_target.metric("TARGET VENTA", f"${v_target:,.2f}")
-        m_stop.metric("STOP LOSS", f"${v_stop:,.2f}")
-        
-        nuevo = {"Hora": hora, "Evento": evento, "Precio": f"${p:,.2f}", "RSI": f"{r:.1f}", "Ganancia $": res_dolar, "Billetera": f"${st.session_state.saldo:,.2f}"}
-        st.session_state.log = pd.concat([pd.DataFrame([nuevo]), st.session_state.log]).head(10)
-        st.table(st.session_state.log)
-        
-        cuadro.success(f"🟢 Activo: {hora} (ARG) | Operando con ${monto_trade}")
-        time.sleep(10)
-        st.rerun()
-else:
-    cuadro.warning("🔴 Bot Apagado.")
+        d_target = st.session_state.target_fijo if st.session_state.comprado else p * (1 + (tp_p/100))
+        d_stop = st.session_state.stop_fijo if st.session_state.comprado else p * (1 - (sl_p/100))
+        m_target.metric("TARGET VENTA", f"${d_target:,.2f}")
+        m_stop.metric("STOP LOSS", f"${d_stop:,.2f
         
