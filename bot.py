@@ -7,9 +7,9 @@ import plotly.graph_objects as go
 from datetime import datetime, timedelta
 
 # --- CONFIGURACIÓN ---
-st.set_page_config(page_title="AI Scalper Pro Historial", layout="wide")
+st.set_page_config(page_title="AI Scalper Control Pro", layout="wide")
 
-# CSS: Blanco sobre Verde Militar (Sin azul)
+# CSS: Blanco sobre Verde Militar
 st.markdown("""
     <style>
     .stApp { background-color: #4B5320 !important; }
@@ -18,7 +18,6 @@ st.markdown("""
     div[data-testid="metric-container"] { 
         background-color: rgba(0,0,0,0.3); border: 2px solid #FFFFFF; border-radius: 12px; padding: 15px;
     }
-    /* Estilo para la Tabla */
     .stTable td, .stTable th { color: #FFFFFF !important; background-color: #353b16 !important; border: 1px solid #FFF !important; }
     </style>
     """, unsafe_allow_html=True)
@@ -41,22 +40,33 @@ def aplicar_kalman(medicion, est_anterior, cov_anterior):
     nueva_cov = (1 - ganancia) * cov_prior
     return nueva_est, nueva_cov
 
-# --- SIDEBAR ---
-st.sidebar.header("🕹️ PANEL DE CONTROL")
+# --- SIDEBAR (CONTROLES SOLICITADOS) ---
+st.sidebar.header("🕹️ AJUSTES DE ESTRATEGIA")
 modo = st.sidebar.radio("Estrategia:", ["ALCISTA", "BAJISTA"])
 moneda = st.sidebar.selectbox("Moneda:", ["BTC", "SOL", "ETH", "ADA", "XRP"])
-monto_trade = st.sidebar.number_input("Monto (USD):", value=50.0)
+monto_trade = st.sidebar.number_input("Inversión (USD):", value=100.0)
+
+st.sidebar.markdown("---")
+st.sidebar.subheader("🎯 SENSORES Y LÍMITES")
+rsi_compra = st.sidebar.slider("RSI Compra (Sobreventa):", 10, 40, 30)
+rsi_venta = st.sidebar.slider("RSI Venta (Sobrecompra):", 60, 90, 70)
+
+tp = st.sidebar.slider("Take Profit (%)", 0.5, 10.0, 2.0) / 100
+sl = st.sidebar.slider("Stop Loss (%)", 0.5, 10.0, 1.5) / 100
+
+st.sidebar.markdown("---")
+ganancia_asegurada = st.sidebar.toggle("Cerrar SOLO con Ganancia", value=True)
 encendido = st.sidebar.toggle("🚀 ENCENDER BOT", key="bot_activo")
 
 # --- UI PRINCIPAL ---
-st.title(f"📊 SISTEMA AI: {moneda}")
+st.title(f"📊 AI BOT: {moneda} ({modo})")
 
 if st.session_state.bot_activo:
     try:
         # Traer precio
         url = f"https://min-api.cryptocompare.com/data/price?fsym={moneda}&tsyms=USD"
         precio = float(requests.get(url, timeout=10).json()['USD'])
-        rsi = 20 + (precio * 10000 % 60)
+        rsi = 20 + (precio * 10000 % 60) # Sensor RSI
         
         # Kalman
         if st.session_state.x_est == 0.0: st.session_state.x_est = precio
@@ -72,39 +82,36 @@ if st.session_state.bot_activo:
         c3.metric("BILLETERA", f"${st.session_state.saldo:,.2f}")
 
         # Gráfico
-        if len(st.session_state.precios_hist) > 1:
-            fig = go.Figure()
-            fig.add_trace(go.Scatter(y=st.session_state.precios_hist, mode='lines+markers', name='Precio', line=dict(color='#00FF00', width=3)))
-            fig.add_trace(go.Scatter(y=st.session_state.kalman_hist, mode='lines', name='IA Kalman', line=dict(color='#FF00FF', width=4)))
-            fig.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', height=300, font=dict(color="white"), margin=dict(l=0,r=0,t=0,b=0))
-            st.plotly_chart(fig, use_container_width=True)
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(y=st.session_state.precios_hist, mode='lines', name='Precio', line=dict(color='#00FF00', width=2)))
+        fig.add_trace(go.Scatter(y=st.session_state.kalman_hist, mode='lines', name='IA Kalman', line=dict(color='#FF00FF', width=3)))
+        fig.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', height=350, font=dict(color="white"), margin=dict(l=0,r=0,t=0,b=0))
+        st.plotly_chart(fig, use_container_width=True)
 
-        # Lógica de Trade y Tabla de Historial
+        # LÓGICA DE TRADING
         evento = "VIGILANDO"
         res_t = 0.0
+        
         if not st.session_state.comprado:
-            if (modo == "ALCISTA" and rsi < 35) or (modo == "BAJISTA" and rsi > 65):
+            # Entrada por RSI configurado
+            if (modo == "ALCISTA" and rsi <= rsi_compra) or (modo == "BAJISTA" and rsi >= rsi_venta):
                 st.session_state.comprado = True
                 st.session_state.entrada = precio
                 evento = "🛒 COMPRA"
         else:
-            res_t = (precio - st.session_state.entrada) * (monto_trade / st.session_state.entrada) if modo == "ALCISTA" else (st.session_state.entrada - precio) * (monto_trade / st.session_state.entrada)
-            evento = "⏳ DENTRO"
+            # Cálculo de rendimiento
+            diff = (precio - st.session_state.entrada) if modo == "ALCISTA" else (st.session_state.entrada - precio)
+            porcentaje_actual = diff / st.session_state.entrada
+            res_t = diff * (monto_trade / st.session_state.entrada)
+            
+            # Condiciones de salida
+            alcanzo_tp = porcentaje_actual >= tp
+            alcanzo_sl = porcentaje_actual <= -sl
+            senial_rsi = (rsi >= rsi_venta if modo == "ALCISTA" else rsi <= rsi_compra)
 
-        # Actualizar la tabla de historial
-        hora = (datetime.utcnow() - timedelta(hours=3)).strftime("%H:%M:%S")
-        nuevo_log = pd.DataFrame([{"Hora": hora, "Evento": evento, "Precio": f"${precio:,.2f}", "Resultado": f"${res_t:.4f}"}])
-        st.session_state.log_df = pd.concat([nuevo_log, st.session_state.log_df]).head(10)
-
-        st.markdown("### 📋 HISTORIAL DE OPERACIONES")
-        st.table(st.session_state.log_df)
-
-        time.sleep(4)
-        st.rerun()
-
-    except Exception as e:
-        st.error(f"Error de datos: {e}")
-        time.sleep(2)
-        st.rerun()
-else:
-    st.info("Bot en espera. Actívalo en el panel lateral.")
+            if alcanzo_tp or alcanzo_sl or senial_rsi:
+                # Aplicar filtro de Ganancia Asegurada
+                if not ganancia_asegurada or res_t > 0 or alcanzo_sl:
+                    st.session_state.saldo += res_t
+                    if res_t > 0: st.session_state.ganancia_total += res_t
+                    else: st.session_state.perdida_total += abs(res
