@@ -92,5 +92,19 @@ if st.session_state.bot_activo:
             evento = "⏳ DENTRO"
 
         # Actualizar la tabla de historial
-        hora =
-        
+        hora = (datetime.utcnow() - timedelta(hours=3)).strftime("%H:%M:%S")
+        nuevo_log = pd.DataFrame([{"Hora": hora, "Evento": evento, "Precio": f"${precio:,.2f}", "Resultado": f"${res_t:.4f}"}])
+        st.session_state.log_df = pd.concat([nuevo_log, st.session_state.log_df]).head(10)
+
+        st.markdown("### 📋 HISTORIAL DE OPERACIONES")
+        st.table(st.session_state.log_df)
+
+        time.sleep(4)
+        st.rerun()
+
+    except Exception as e:
+        st.error(f"Error de datos: {e}")
+        time.sleep(2)
+        st.rerun()
+else:
+    st.info("Bot en espera. Actívalo en el panel lateral.")
