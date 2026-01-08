@@ -66,5 +66,80 @@ if st.sidebar.button("🗑️ Limpiar Historial"):
 # --- DATOS ---
 def traer_datos(symbol):
     try:
-        url = f"https://
+        url = f"https://min-api.cryptocompare.com/data/price?fsym={symbol}&tsyms=USD"
+        res = requests.get(url, timeout=5).json()
+        p = float(res['USD'])
+        rsi_sim = 30 + (p % 40)
+        return p, rsi_sim
+    except: return None, None
+
+# --- PANEL ---
+st.title(f"🤖 Monitor: {st.session_state.moneda_actual}")
+c1, c2, c3, c4 = st.columns(4)
+m_pre = c1.empty()
+m_rsi = c2.empty()
+m_bil = c3.empty()
+m_est = c4.empty()
+
+st.write("### Niveles de Ejecución (Fijos)")
+c5, c6 = st.columns(2)
+m_target = c5.empty()
+m_stop = c6.empty()
+
+st.write("---")
+cuadro = st.empty()
+
+# --- LÓGICA ---
+if encendido:
+    p, r = traer_datos(st.session_state.moneda_actual)
+    hora = (datetime.utcnow() - timedelta(hours=3)).strftime("%H:%M:%S")
+    
+    if p:
+        evento = "VIGILANDO"
+        res_dolar = "$0.00"
         
+        if not st.session_state.comprado:
+            target_visual = p * (1 + (tp_p/100))
+            stop_visual = p * (1 - (sl_p/100))
+            if r < 35:
+                st.session_state.comprado = True
+                st.session_state.entrada = p
+                st.session_state.target_fijo = p * (1 + (tp_p/100))
+                st.session_state.stop_fijo = p * (1 - (sl_p/100))
+                evento = "🛒 COMPRA ($10)"
+        else:
+            target_visual = st.session_state.target_fijo
+            stop_visual = st.session_state.stop_fijo
+            
+            # CORRECCIÓN: Usamos >= y <= para que venda apenas toque el precio
+            if p >= (st.session_state.target_fijo - 0.0001): 
+                dif = (p - st.session_state.entrada) * (monto_trade/st.session_state.entrada)
+                st.session_state.saldo += dif
+                res_dolar = f"+${dif:.2f}"
+                evento = "💰 VENTA PROFIT"
+                st.session_state.comprado = False
+            elif p <= (st.session_state.stop_fijo + 0.0001):
+                dif = (p - st.session_state.entrada) * (monto_trade/st.session_state.entrada)
+                st.session_state.saldo += dif
+                res_dolar = f"${dif:.2f}"
+                evento = "📉 VENTA STOP"
+                st.session_state.comprado = False
+            else:
+                evento = f"⏳ HOLD (${st.session_state.entrada:,.2f})"
+
+        m_pre.metric(f"PRECIO {st.session_state.moneda_actual}", f"${p:,.2f}")
+        m_rsi.metric("SENSOR RSI", f"{r:.1f}")
+        m_bil.metric("BILLETERA USD", f"${st.session_state.saldo:,.2f}")
+        m_est.metric("ESTADO", evento)
+        m_target.metric("VENDER EN (FIXED)", f"${target_visual:,.2f}")
+        m_stop.metric("SALIR EN (FIXED)", f"${stop_visual:,.2f}")
+        
+        nuevo = {"Hora": hora, "Evento": evento, "Precio": f"${p:,.2f}", "RSI": f"{r:.1f}", "Ganancia $": res_dolar, "Billetera": f"${st.session_state.saldo:,.2f}"}
+        st.session_state.log = pd.concat([pd.DataFrame([nuevo]), st.session_state.log]).head(10)
+        st.table(st.session_state.log)
+        
+        cuadro.success(f"🟢 Activo | {st.session_state.moneda_actual} | {hora}")
+        time.sleep(10)
+        st.rerun()
+else:
+    cuadro.warning("🔴 Bot Apagado.")
