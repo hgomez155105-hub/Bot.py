@@ -45,15 +45,13 @@ if 'comprado' not in st.session_state:
 if 'moneda_actual' not in st.session_state:
     st.session_state.moneda_actual = "SOL"
 
-# --- SIDEBAR (INTERACTIVO) ---
+# --- SIDEBAR ---
 st.sidebar.header("⚙️ Configuración")
-# Si cambias la moneda, el bot se entera al instante
-moneda_nueva = st.sidebar.selectbox("Seleccionar Moneda:", ["SOL", "BTC", "ETH", "ADA", "XRP", "DOT", "MATIC"], index=0)
+moneda_nueva = st.sidebar.selectbox("Seleccionar Moneda:", ["SOL", "BTC", "ETH", "ADA", "XRP", "DOT", "MATIC"])
 
-# Reset si cambia la moneda manualmente
 if moneda_nueva != st.session_state.moneda_actual:
     st.session_state.moneda_actual = moneda_nueva
-    st.session_state.comprado = False # Cerramos trade por seguridad al cambiar activo
+    st.session_state.comprado = False 
     st.rerun()
 
 monto_trade = st.sidebar.number_input("Monto por Trade (USD):", min_value=1.0, value=10.0)
@@ -83,7 +81,7 @@ m_rsi = c2.empty()
 m_bil = c3.empty()
 m_est = c4.empty()
 
-st.write("### Niveles de Ejecución (Fijos)")
+st.write("### Niveles de Ejecución (Fijos al comprar)")
 c5, c6 = st.columns(2)
 m_target = c5.empty()
 m_stop = c6.empty()
@@ -91,7 +89,7 @@ m_stop = c6.empty()
 st.write("---")
 cuadro = st.empty()
 
-# --- LÓGICA DE EJECUCIÓN (SIN WHILE TRUE PARA EVITAR LAG) ---
+# --- LÓGICA ---
 if encendido:
     p, r = traer_datos(st.session_state.moneda_actual)
     hora = (datetime.utcnow() - timedelta(hours=3)).strftime("%H:%M:%S")
@@ -100,16 +98,24 @@ if encendido:
         evento = "VIGILANDO"
         res_dolar = "$0.00"
         
-        # 1. COMPRA
-        if not st.session_state.comprado and r < 35:
-            st.session_state.comprado = True
-            st.session_state.entrada = p
-            st.session_state.target_fijo = p * (1 + (tp_p/100))
-            st.session_state.stop_fijo = p * (1 - (sl_p/100))
-            evento = f"🛒 COMPRA (${monto_trade})"
+        # 1. SI NO ESTOY COMPRADO: Calculo niveles sobre el precio actual (Estimados)
+        if not st.session_state.comprado:
+            target_visual = p * (1 + (tp_p/100))
+            stop_visual = p * (1 - (sl_p/100))
+            
+            if r < 35:
+                st.session_state.comprado = True
+                st.session_state.entrada = p
+                # CONGELAMOS LOS NIVELES REALES
+                st.session_state.target_fijo = p * (1 + (tp_p/100))
+                st.session_state.stop_fijo = p * (1 - (sl_p/100))
+                evento = f"🛒 COMPRA (${monto_trade})"
         
-        # 2. VENTA
-        elif st.session_state.comprado:
+        # 2. SI ESTOY COMPRADO: Los niveles visuales SON los fijos
+        else:
+            target_visual = st.session_state.target_fijo
+            stop_visual = st.session_state.stop_fijo
+            
             if p >= st.session_state.target_fijo:
                 dif = (p - st.session_state.entrada) * (monto_trade/st.session_state.entrada)
                 st.session_state.saldo += dif
@@ -125,14 +131,24 @@ if encendido:
             else:
                 evento = f"⏳ HOLD (${st.session_state.entrada:,.2f})"
 
-        # Mostrar métricas
+        # Actualizar Interfaz con los niveles correctos
         m_pre.metric(f"PRECIO {st.session_state.moneda_actual}", f"${p:,.2f}")
         m_rsi.metric("SENSOR RSI", f"{r:.1f}")
         m_bil.metric("BILLETERA USD", f"${st.session_state.saldo:,.2f}")
         m_est.metric("ESTADO", evento)
         
-        d_target = st.session_state.target_fijo if st.session_state.comprado else p * (1 + (tp_p/100))
-        d_stop = st.session_state.stop_fijo if st.session_state.comprado else p * (1 - (sl_p/100))
-        m_target.metric("TARGET VENTA", f"${d_target:,.2f}")
-        m_stop.metric("STOP LOSS", f"${d_stop:,.2f
+        # AQUÍ ESTÁ EL CAMBIO: Mostramos target_visual y stop_visual que ahora son fijos si hay compra
+        m_target.metric("META DE VENTA (+)", f"${target_visual:,.2f}")
+        m_stop.metric("LÍMITE DE PÉRDIDA (-)", f"${stop_visual:,.2f}")
         
+        # Tabla
+        nuevo = {"Hora": hora, "Evento": evento, "Precio": f"${p:,.2f}", "RSI": f"{r:.1f}", "Ganancia $": res_dolar, "Billetera": f"${st.session_state.saldo:,.2f}"}
+        st.session_state.log = pd.concat([pd.DataFrame([nuevo]), st.session_state.log]).head(10)
+        st.table(st.session_state.log)
+        
+        cuadro.success(f"🟢 Activo | {st.session_state.moneda_actual} | {hora}")
+        time.sleep(10)
+        st.rerun()
+else:
+    cuadro.warning("🔴 Bot Apagado.")
+    
