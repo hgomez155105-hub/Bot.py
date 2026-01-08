@@ -7,57 +7,60 @@ import plotly.graph_objects as go
 from datetime import datetime, timedelta
 
 # --- CONFIGURACIÓN DE PANTALLA ---
-st.set_page_config(page_title="AI Scalper Ultra Bright", layout="wide")
+st.set_page_config(page_title="AI Scalper Verde Militar", layout="wide")
 
-# ESTILO DE ALTO CONTRASTE (BLANCO PURO TOTAL)
+# ESTILO VERDE MILITAR Y LETRAS BLANCAS
 st.markdown("""
     <style>
-    /* Fondo negro */
-    .stApp { background-color: #000000; color: #FFFFFF; }
+    /* Fondo Verde Militar para toda la app */
+    .stApp { 
+        background-color: #4B5320 !important; 
+        color: #FFFFFF !important; 
+    }
     
-    /* Números de métricas */
+    /* Sidebar Verde Militar más oscuro */
+    section[data-testid="stSidebar"] { 
+        background-color: #353b16 !important; 
+    }
+
+    /* Números y letras de métricas */
     [data-testid="stMetricValue"] { 
         color: #FFFFFF !important; 
         font-size: 2.2rem !important; 
         font-weight: 800 !important; 
     }
     
-    /* Etiquetas de métricas (Letras de arriba) */
     [data-testid="stMetricLabel"] { 
         color: #FFFFFF !important; 
         font-size: 1.1rem !important; 
         font-weight: 800 !important;
-        text-transform: uppercase;
     }
     
-    /* Caja de métricas */
+    /* Cajas de métricas en verde oscuro */
     div[data-testid="metric-container"] { 
-        background-color: #111; 
-        border: 2px solid #555; 
+        background-color: #353b16; 
+        border: 2px solid #FFFFFF; 
         border-radius: 12px; 
+        padding: 10px;
     }
 
-    /* TODA LA TABLA: Letras blancas brillantes */
+    /* Tabla con fondo verde y letras blancas */
     .stTable, [data-testid="stTable"] td, [data-testid="stTable"] th { 
+        background-color: #4B5320 !important;
         color: #FFFFFF !important; 
         font-size: 1.1rem !important; 
         font-weight: 800 !important; 
-        border-bottom: 1px solid #444 !important;
-        opacity: 1 !important;
+        border-bottom: 1px solid #FFFFFF !important;
     }
     
-    /* Títulos y Subtítulos */
-    h1, h2, h3, p, span { 
+    /* Títulos y textos generales */
+    h1, h2, h3, p, span, label { 
         color: #FFFFFF !important; 
         font-weight: 800 !important; 
     }
 
-    /* Sidebar letras */
-    section[data-testid="stSidebar"] { background-color: #050505 !important; }
-    .stSlider label, .stSelectbox label, .stNumberInput label, .stRadio label { 
-        color: #FFFFFF !important; 
-        font-weight: 700 !important; 
-    }
+    /* Ajuste para inputs y botones */
+    .stButton>button { background-color: #353b16; color: white; border: 1px solid white; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -100,15 +103,3 @@ def traer_datos(sim):
 st.title(f"📊 AI TRADING: {moneda}")
 c1, c2, c3 = st.columns(3)
 m_pre, m_rsi, m_bil = c1.empty(), c2.empty(), c3.empty()
-
-st.markdown("### 📈 GRÁFICO DE TENDENCIA (IA)")
-chart_spot = st.empty()
-
-st.markdown("### 💰 CAJA DE GANANCIAS")
-c4, c5, c6 = st.columns(3)
-m_gan, m_per, m_eff = c4.empty(), c5.empty(), c6.empty()
-
-# --- BUCLE ---
-if encendido:
-    precio, rsi = traer_datos(moneda)
-    
