@@ -2,140 +2,119 @@ import streamlit as st
 import pandas as pd
 import requests
 import time
-import numpy as np  # <--- Esta es la librería de Kalman
+import numpy as np
+import plotly.graph_objects as go
 from datetime import datetime, timedelta
 
 # --- SEGURIDAD ---
-PASSWORD = "caseros2024"
-if "auth" not in st.session_state:
-    st.session_state.auth = False
-
+if "auth" not in st.session_state: st.session_state.auth = False
 if not st.session_state.auth:
     st.title("🔐 Acceso")
     clave = st.text_input("Contraseña:", type="password")
     if st.button("Ingresar"):
-        if clave == PASSWORD:
+        if clave == "caseros2024":
             st.session_state.auth = True
             st.rerun()
-        else:
-            st.error("Clave incorrecta")
     st.stop()
 
-# --- MOTOR KALMAN (MATEMÁTICA PURA) ---
+# --- FILTRO DE KALMAN ---
 def aplicar_kalman(medicion, est_anterior, cov_anterior):
-    # Parámetros de ruido (Ajustados para Scalping agresivo)
-    R = 0.01**2  # Ruido de la medición (API)
-    Q = 0.001**2 # Ruido del proceso (Mercado)
-    
-    # Predicción
+    R, Q = 0.01**2, 0.001**2
     est_prior = est_anterior
     cov_prior = cov_anterior + Q
-    
-    # Ganancia de Kalman
     ganancia = cov_prior / (cov_prior + R)
-    
-    # Actualización
     nueva_est = est_prior + ganancia * (medicion - est_prior)
     nueva_cov = (1 - ganancia) * cov_prior
-    
     return nueva_est, nueva_cov
 
-# --- ESTILO ALTO CONTRASTE ---
-st.set_page_config(page_title="Kalman AI Scalper", layout="wide")
-st.markdown("""
-    <style>
-    .stApp { background-color: #000; color: #FFF; }
-    [data-testid="stMetricValue"] { color: #FFF !important; font-size: 2.2rem !important; font-weight: 800; }
-    [data-testid="stMetricLabel"] { color: #FFF !important; font-weight: 700; }
-    div[data-testid="metric-container"] { background-color: #111; border: 2px solid #444; border-radius: 12px; }
-    .stTable, [data-testid="stTable"] td { color: #FFF !important; font-weight: 700 !important; font-size: 1.1rem !important; }
-    </style>
-    """, unsafe_allow_html=True)
+# --- CONFIGURACIÓN Y ESTILO ---
+st.set_page_config(page_title="AI Scalper Pro Charts", layout="wide")
+st.markdown("<style>.stApp { background-color: #000; color: #FFF; }</style>", unsafe_allow_html=True)
 
-# --- INICIALIZACIÓN ---
+# --- INICIALIZACIÓN DE DATOS ---
+if 'precios_hist' not in st.session_state: st.session_state.precios_hist = []
+if 'kalman_hist' not in st.session_state: st.session_state.kalman_hist = []
 if 'saldo' not in st.session_state: st.session_state.saldo = 1000.0
+if 'comprado' not in st.session_state: st.session_state.comprado = False
 if 'x_est' not in st.session_state: st.session_state.x_est = 0.0
 if 'p_cov' not in st.session_state: st.session_state.p_cov = 1.0
-if 'log' not in st.session_state: st.session_state.log = pd.DataFrame(columns=["Hora", "Evento", "Precio", "Predicción", "RSI", "Resultado"])
-if 'comprado' not in st.session_state: st.session_state.comprado = False
 
 # --- SIDEBAR ---
-st.sidebar.header("🧠 AI KALMAN CONFIG")
-moneda = st.sidebar.selectbox("Moneda:", ["SOL", "BTC", "ETH", "ADA", "XRP", "DOT"])
+st.sidebar.header("📊 ESTRATEGIA PIONEX")
+modo = st.sidebar.radio("Dirección del Mercado:", ["ALCISTA (Long)", "BAJISTA (Short)"])
+moneda = st.sidebar.selectbox("Moneda:", ["SOL", "BTC", "ETH", "ADA", "XRP"])
 monto_trade = st.sidebar.number_input("Inversión (USD):", value=10.0)
-rsi_in = st.sidebar.slider("RSI Compra:", 10, 50, 30)
-rsi_out = st.sidebar.slider("RSI Venta:", 51, 90, 60)
-encendido = st.sidebar.toggle("⚡ ACTIVAR ALGORITMO", value=False)
+solo_ganancia = st.sidebar.checkbox("Ganancia Asegurada (No vender en pérdida)", value=True)
+encendido = st.sidebar.toggle("⚡ INICIAR BOT", value=False)
 
-# --- DATOS ---
-def obtener_datos(sim):
+# --- OBTENCIÓN DE DATOS ---
+def traer_datos(sim):
     try:
         url = f"https://min-api.cryptocompare.com/data/price?fsym={sim}&tsyms=USD"
-        p = requests.get(url, timeout=5).json()['USD']
-        rsi = 15 + (p * 10000 % 70) 
+        p = requests.get(url).json()['USD']
+        rsi = 20 + (p * 10000 % 60)
         return float(p), float(rsi)
     except: return None, None
 
-# --- UI ---
-st.title(f"🧠 AI SCALPER KALMAN: {moneda}")
-c1, c2, c3 = st.columns(3)
-m_pre = c1.empty()
-m_kal = c2.empty()
-m_bil = c3.empty()
+# --- UI PRINCIPAL ---
+st.title(f"🚀 AI TRADING DASHBOARD: {moneda}")
 
-st.write("---")
-c4, c5 = st.columns(2)
-m_rsi = c4.empty()
-m_est = c5.empty()
+col_m1, col_m2, col_m3 = st.columns(3)
+m_pre = col_m1.empty()
+m_rsi = col_m2.empty()
+m_bil = col_m3.empty()
 
-# --- EJECUCIÓN ---
+# CONTENEDOR DEL GRÁFICO
+chart_placeholder = st.empty()
+
+# --- LÓGICA DE EJECUCIÓN ---
 if encendido:
-    precio_raw, rsi_val = obtener_datos(moneda)
-    hora = (datetime.utcnow() - timedelta(hours=3)).strftime("%H:%M:%S")
-
-    if precio_raw:
-        # Inicializar filtro si es la primera vez
-        if st.session_state.x_est == 0.0: st.session_state.x_est = precio_raw
+    precio, rsi = traer_datos(moneda)
+    if precio:
+        # Actualizar Kalman
+        if st.session_state.x_est == 0.0: st.session_state.x_est = precio
+        st.session_state.x_est, st.session_state.p_cov = aplicar_kalman(precio, st.session_state.x_est, st.session_state.p_cov)
         
-        # APLICAR KALMAN
-        st.session_state.x_est, st.session_state.p_cov = aplicar_kalman(
-            precio_raw, st.session_state.x_est, st.session_state.p_cov
-        )
-        
-        prediccion = st.session_state.x_est
-        evento = "👀 FILTRANDO"
-        resultado = 0.0
+        # Guardar historial para el gráfico (limitamos a 30 puntos)
+        st.session_state.precios_hist.append(precio)
+        st.session_state.kalman_hist.append(st.session_state.x_est)
+        if len(st.session_state.precios_hist) > 30:
+            st.session_state.precios_hist.pop(0)
+            st.session_state.kalman_hist.pop(0)
 
-        # Lógica de Trading AI
+        # Crear Gráfico de Velas (Simuladas con historial)
+        fig = go.Figure()
+        # Línea de Precio Real
+        fig.add_trace(go.Scatter(y=st.session_state.precios_hist, mode='lines+markers', name='Precio Real', line=dict(color='#00FF00', width=2)))
+        # Línea de Tendencia Kalman (IA)
+        fig.add_trace(go.Scatter(y=st.session_state.kalman_hist, mode='lines', name='Tendencia AI (Kalman)', line=dict(color='#FF00FF', width=3, dash='dot')))
+        
+        fig.update_layout(template="plotly_dark", height=400, margin=dict(l=20, r=20, t=20, b=20),
+                          xaxis_title="Tiempo (ticks)", yaxis_title="Precio USD")
+        chart_placeholder.plotly_chart(fig, use_container_width=True)
+
+        # Lógica de Trade (Simplificada para el ejemplo)
+        evento = "VIGILANDO"
         if not st.session_state.comprado:
-            if rsi_val <= rsi_in:
+            if (modo == "ALCISTA (Long)" and rsi < 35) or (modo == "BAJISTA (Short)" and rsi > 65):
                 st.session_state.comprado = True
-                st.session_state.entrada = precio_raw
-                evento = "🛒 COMPRA AI"
+                st.session_state.entrada = precio
+                evento = "🛒 ENTRADA"
         else:
-            # Salida: RSI alto y precio confirmando tendencia arriba de la media de Kalman
-            if rsi_val >= rsi_out:
-                resultado = (precio_raw - st.session_state.entrada) * (monto_trade / st.session_state.entrada)
-                st.session_state.saldo += resultado
-                evento = "💰 PROFIT KALMAN"
-                st.session_state.comprado = False
+            res = (precio - st.session_state.entrada) if modo == "ALCISTA (Long)" else (st.session_state.entrada - precio)
+            if (modo == "ALCISTA (Long)" and rsi > 60) or (modo == "BAJISTA (Short)" and rsi < 40):
+                if not solo_ganancia or res > 0:
+                    st.session_state.saldo += (res * (monto_trade / precio))
+                    st.session_state.comprado = False
+                    evento = "💰 CIERRE CON EXITO"
             else:
-                evento = "⏳ HOLD (AI OPTIMIZING)"
+                evento = "⏳ HOLDING"
 
-        # Actualizar Pantalla (TODO BLANCO Y GRANDE)
-        m_pre.metric("PRECIO REAL", f"${precio_raw:,.2f}")
-        m_kal.metric("PREDICCIÓN AI", f"${prediccion:,.2f}", delta=f"{precio_raw-prediccion:.4f}")
+        # Métricas
+        m_pre.metric("PRECIO ACTUAL", f"${precio:,.2f}")
+        m_rsi.metric("RSI", f"{rsi:.1f}", delta=evento)
         m_bil.metric("BILLETERA", f"${st.session_state.saldo:,.2f}")
-        m_rsi.metric("RSI ACTUAL", f"{rsi_val:.1f}")
-        m_est.metric("ESTADO AI", evento)
-
-        # Historial
-        nuevo = {"Hora": hora, "Evento": evento, "Precio": f"${precio_raw:,.2f}", "Predicción": f"${prediccion:,.2f}", "RSI": f"{rsi_val:.1f}", "Resultado": f"${resultado:.4f}"}
-        st.session_state.log = pd.concat([pd.DataFrame([nuevo]), st.session_state.log]).head(8)
-        st.table(st.session_state.log)
 
         time.sleep(5)
         st.rerun()
-else:
-    st.warning("Active el algoritmo en el panel lateral.")
         
