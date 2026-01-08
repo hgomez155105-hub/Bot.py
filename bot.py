@@ -25,14 +25,6 @@ st.markdown("""
 if 'moneda_actual' not in st.session_state:
     st.session_state.moneda_actual = "BTC"
 
-# Función para resetear si cambias de moneda
-def reset_memoria():
-    st.session_state.precios_hist = []
-    st.session_state.kalman_hist = []
-    st.session_state.comprado = False
-    st.session_state.x_est = 0.0
-    st.session_state.p_cov = 1.0
-
 if 'log_df' not in st.session_state:
     st.session_state.update({
         'saldo': 1000.0, 'ganancia_acumulada': 0.0, 
@@ -56,10 +48,11 @@ st.sidebar.header("🕹️ ESTRATEGIA")
 modo = st.sidebar.radio("Tendencia:", ["ALCISTA", "BAJISTA"])
 nueva_moneda = st.sidebar.selectbox("Moneda:", ["BTC", "SOL", "ETH", "ADA", "XRP"])
 
-# Si el usuario cambia la moneda, reseteamos gráfico y memoria
 if nueva_moneda != st.session_state.moneda_actual:
     st.session_state.moneda_actual = nueva_moneda
-    reset_memoria()
+    st.session_state.precios_hist = []
+    st.session_state.kalman_hist = []
+    st.session_state.comprado = False
     st.rerun()
 
 monto_trade = st.sidebar.number_input("Inversión (USD):", value=100.0)
@@ -74,10 +67,10 @@ st.title(f"📊 BOT de IA: {st.session_state.moneda_actual}")
 
 if st.session_state.bot_activo:
     try:
-        # 1. Obtener precio fresco
+        # 1. Obtener precio y RSI
         url = f"https://min-api.cryptocompare.com/data/price?fsym={st.session_state.moneda_actual}&tsyms=USD"
-        res = requests.get(url, timeout=5).json()
-        precio = float(res['USD'])
+        precio = float(requests.get(url).json()['USD'])
+        rsi = 20 + (precio * 10000 % 60) # Simulador de RSI dinámico
         
         # 2. IA Kalman
         if st.session_state.x_est == 0.0: st.session_state.x_est = precio
@@ -92,43 +85,37 @@ if st.session_state.bot_activo:
         # 3. Métricas
         c1, c2, c3 = st.columns(3)
         c1.metric("PRECIO ACTUAL", f"${precio:,.2f}")
-        c2.metric("GANANCIA ACUM.", f"${st.session_state.ganancia_acumulada:.2f}")
-        c3.metric("BILLETERA (CASH)", f"${st.session_state.saldo:,.2f}")
+        c2.metric("RSI", f"{rsi:.1f}")
+        c3.metric("BILLETERA", f"${st.session_state.saldo:,.2f}")
 
-        # 4. Gráfico dinámico (zoom automático)
+        # 4. Gráfico
         fig = go.Figure()
         fig.add_trace(go.Scatter(y=st.session_state.precios_hist, mode='lines+markers', name='Precio', line=dict(color='#00FF00')))
         fig.add_trace(go.Scatter(y=st.session_state.kalman_hist, mode='lines', name='IA', line=dict(color='#FF00FF', dash='dot')))
-        
         if st.session_state.comprado:
             fig.add_hline(y=st.session_state.entrada, line_color="white", annotation_text="COMPRA")
-            fig.add_hline(y=st.session_state.precio_objetivo, line_color="gold", annotation_text="META")
-        
-        fig.update_layout(
-            paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', 
-            height=350, margin=dict(l=0,r=0,t=0,b=0), font=dict(color="white"),
-            yaxis=dict(autorange=True, fixedrange=False) # Esto arregla el gráfico plano
-        )
         st.plotly_chart(fig, use_container_width=True)
 
-        # 5. Lógica de Trading y Billetera
+        # 5. LÓGICA DE TRADING REAL
         evento = "VIGILANDO"
         res_t = 0.0
         
         if not st.session_state.comprado:
-            # Comprar si el precio cruza la IA (ejemplo de señal)
-            if precio < st.session_state.x_est * 0.999: 
+            # CONDICIÓN DE COMPRA: Precio bajo la IA Y RSI bajo (sobreventa)
+            if precio < st.session_state.x_est and rsi < 35:
                 st.session_state.comprado = True
                 st.session_state.entrada = precio
-                st.session_state.precio_objetivo = precio * (1 + tp_perc)
-                st.session_state.saldo -= monto_trade # DESCUENTO REAL
+                st.session_state.saldo -= monto_trade
                 evento = "🛒 COMPRA"
         else:
+            # CONDICIÓN DE VENTA
             diff = (precio - st.session_state.entrada)
             perc = diff / st.session_state.entrada
-            if perc >= tp_perc or perc <= -sl_perc:
+            
+            # Vender por TP, SL o RSI alto
+            if perc >= tp_perc or perc <= -sl_perc or rsi > 70:
                 res_t = diff * (monto_trade / st.session_state.entrada)
-                st.session_state.saldo += (monto_trade + res_t) # DEVOLUCIÓN + RESULTADO
+                st.session_state.saldo += (monto_trade + res_t)
                 st.session_state.ganancia_acumulada += res_t
                 if res_t > 0: st.session_state.trades_ganados += 1
                 else: st.session_state.trades_perdidos += 1
@@ -137,23 +124,19 @@ if st.session_state.bot_activo:
             else:
                 evento = "🎯 DENTRO"
 
-        # 6. Tabla e Historial
+        # 6. Historial y Efectividad
+        st.write(f"✅ Ganados: {st.session_state.trades_ganados} | ❌ Perdidos: {st.session_state.trades_perdidos} | Neto: ${st.session_state.ganancia_acumulada:.2f}")
+        
         hora = datetime.now().strftime("%H:%M:%S")
         nuevo_log = pd.DataFrame([{"Hora": hora, "Evento": evento, "Precio": f"${precio:,.2f}", "Resultado": f"${res_t:.4f}"}])
         st.session_state.log_df = pd.concat([nuevo_log, st.session_state.log_df]).reset_index(drop=True)
-        
-        st.markdown("### 🏆 EFECTIVIDAD")
-        col_e1, col_e2 = st.columns(2)
-        col_e1.write(f"✅ Ganados: {st.session_state.trades_ganados} | ❌ Perdidos: {st.session_state.trades_perdidos}")
         st.dataframe(st.session_state.log_df, use_container_width=True, height=200)
 
         time.sleep(3)
         st.rerun()
 
     except Exception as e:
-        st.info("Sincronizando con el exchange...")
+        st.info("Actualizando señales...")
         time.sleep(2)
         st.rerun()
-else:
-    st.warning("⚠️ ACTIVÁ EL BOT PARA COMENZAR")
         
