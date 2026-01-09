@@ -122,3 +122,4 @@ if st.session_state.bot_activo:
         st.error(f"Error: {e}")
         time.sleep(2)
         st.rerun()
+        
