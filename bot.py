@@ -7,9 +7,9 @@ import plotly.graph_objects as go
 from datetime import datetime
 
 # --- CONFIGURACIÓN ---
-st.set_page_config(page_title="AI Scalper Pro Max", layout="wide")
+st.set_page_config(page_title="AI Scalper Grid Sim", layout="wide")
 
-# CSS: Estética Mac / Verde Militar
+# CSS: Verde Militar
 st.markdown("""
     <style>
     .stApp { background-color: #4B5320 !important; }
@@ -21,122 +21,104 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- INICIALIZACIÓN DE ESTADO ---
-if 'moneda_actual' not in st.session_state:
-    st.session_state.moneda_actual = "BTC"
-
+# --- INICIALIZACIÓN ---
 if 'log_df' not in st.session_state:
     st.session_state.update({
-        'saldo': 1000.0, 'ganancia_acumulada': 0.0, 
-        'trades_ganados': 0, 'trades_perdidos': 0,
-        'precios_hist': [], 'kalman_hist': [], 'comprado': False,
-        'x_est': 0.0, 'p_cov': 1.0, 'entrada': 0.0, 'precio_objetivo': 0.0,
-        'log_df': pd.DataFrame(columns=["Hora", "Evento", "Precio", "Resultado"])
+        'saldo': 1000.0, 'ganancia_acumulada': 0.0,
+        'precios_hist': [], 'kalman_hist': [],
+        'posiciones': [], # Lista de compras en rejilla
+        'x_est': 0.0, 'p_cov': 1.0,
+        'log_df': pd.DataFrame(columns=["Hora", "Evento", "Precio", "Poro"])
     })
 
-def aplicar_kalman(medicion, est_anterior, cov_anterior):
-    R, Q = 0.01**2, 0.001**2
-    est_prior = est_anterior
-    cov_prior = cov_anterior + Q
-    ganancia = cov_prior / (cov_prior + R)
-    nueva_est = est_prior + ganancia * (medicion - est_prior)
-    nueva_cov = (1 - ganancia) * cov_prior
-    return nueva_est, nueva_cov
-
 # --- SIDEBAR ---
-st.sidebar.header("🕹️ ESTRATEGIA")
-modo = st.sidebar.radio("Tendencia:", ["ALCISTA", "BAJISTA"])
-nueva_moneda = st.sidebar.selectbox("Moneda:", ["BTC", "SOL", "ETH", "ADA", "XRP"])
+st.sidebar.header("🕹️ CONFIGURACIÓN PRO")
+moneda = st.sidebar.selectbox("Moneda:", ["BTC", "SOL", "ETH", "XRP"])
+apalancamiento = st.sidebar.slider("Apalancamiento (Leverage):", 1, 20, 10)
+monto_por_rejilla = st.sidebar.number_input("Inversión por Nivel (USD):", value=20.0)
 
-if nueva_moneda != st.session_state.moneda_actual:
-    st.session_state.moneda_actual = nueva_moneda
-    st.session_state.precios_hist = []
-    st.session_state.kalman_hist = []
-    st.session_state.comprado = False
-    st.rerun()
+st.sidebar.subheader("📐 AJUSTE DE REJILLA (GRID)")
+distancia_grid = st.sidebar.slider("Distancia entre niveles (%)", 0.1, 2.0, 0.5) / 100
+niveles_max = st.sidebar.slider("Máximo de niveles:", 3, 10, 5)
 
-monto_trade = st.sidebar.number_input("Inversión (USD):", value=100.0)
-
-st.sidebar.subheader("🎯 SENSORES")
-tp_perc = st.sidebar.slider("Toma de ganancias (%)", 0.1, 5.0, 0.5) / 100
-sl_perc = st.sidebar.slider("Stop Loss (%)", 0.1, 5.0, 0.5) / 100
-encendido = st.sidebar.toggle("🚀 BOT ENCENDEDOR", key="bot_activo")
+encendido = st.sidebar.toggle("🚀 ENCENDER SIMULADOR", key="bot_activo")
 
 # --- UI PRINCIPAL ---
-st.title(f"📊 BOT de IA: {st.session_state.moneda_actual}")
+st.title(f"📊 GRID TRADING SIM: {moneda} {apalancamiento}x")
 
 if st.session_state.bot_activo:
     try:
-        # 1. Obtener precio y RSI
-        url = f"https://min-api.cryptocompare.com/data/price?fsym={st.session_state.moneda_actual}&tsyms=USD"
+        # 1. Obtener precio
+        url = f"https://min-api.cryptocompare.com/data/price?fsym={moneda}&tsyms=USD"
         precio = float(requests.get(url).json()['USD'])
-        rsi = 20 + (precio * 10000 % 60) # Simulador de RSI dinámico
         
-        # 2. IA Kalman
+        # 2. IA Kalman para tendencia
         if st.session_state.x_est == 0.0: st.session_state.x_est = precio
-        st.session_state.x_est, st.session_state.p_cov = aplicar_kalman(precio, st.session_state.x_est, st.session_state.p_cov)
+        R, Q = 0.01**2, 0.001**2
+        cov_prior = st.session_state.p_cov + Q
+        ganancia_k = cov_prior / (cov_prior + R)
+        st.session_state.x_est = st.session_state.x_est + ganancia_k * (precio - st.session_state.x_est)
+        st.session_state.p_cov = (1 - ganancia_k) * cov_prior
         
         st.session_state.precios_hist.append(precio)
-        st.session_state.kalman_hist.append(st.session_state.x_est)
-        if len(st.session_state.precios_hist) > 50:
-            st.session_state.precios_hist.pop(0)
-            st.session_state.kalman_hist.pop(0)
+        if len(st.session_state.precios_hist) > 50: st.session_state.precios_hist.pop(0)
 
-        # 3. Métricas
+        # 3. LÓGICA DE REJILLAS (GRID)
+        evento = "VIGILANDO"
+        
+        # ¿Hay que abrir una nueva rejilla? (Si el precio baja la distancia configurada)
+        puede_comprar = len(st.session_state.posiciones) < niveles_max
+        if puede_comprar:
+            if not st.session_state.posiciones or precio < st.session_state.posiciones[-1]['precio'] * (1 - distancia_grid):
+                nueva_pos = {'precio': precio, 'monto': monto_por_rejilla}
+                st.session_state.posiciones.append(nueva_pos)
+                st.session_state.saldo -= monto_por_rejilla
+                evento = f"🛒 REJILLA {len(st.session_state.posiciones)} OPEN"
+
+        # ¿Hay que cerrar alguna rejilla? (Si el precio sube la distancia configurada)
+        for i, pos in enumerate(st.session_state.posiciones):
+            dif_precio = (precio - pos['precio']) / pos['precio']
+            # Aplicamos apalancamiento a la ganancia/pérdida
+            profit_simulado = (dif_precio * apalancamiento) * pos['monto']
+            
+            if dif_precio >= distancia_grid: # Vendemos este nivel
+                st.session_state.saldo += (pos['monto'] + profit_simulado)
+                st.session_state.ganancia_acumulada += profit_simulado
+                st.session_state.posiciones.pop(i)
+                evento = "💰 REJILLA CLOSE (PROFIT)"
+                break
+
+        # 4. MÉTRICAS CON APALANCAMIENTO
         c1, c2, c3 = st.columns(3)
-        c1.metric("PRECIO ACTUAL", f"${precio:,.2f}")
-        c2.metric("RSI", f"{rsi:.1f}")
-        c3.metric("BILLETERA", f"${st.session_state.saldo:,.2f}")
+        c1.metric("PRECIO", f"${precio:,.2f}")
+        c2.metric("NIVELES ABIERTOS", len(st.session_state.posiciones))
+        # PNL Flotante (lo que vas perdiendo/ganando mientras estás adentro)
+        pnl_flotante = sum([( (precio - p['precio'])/p['precio'] * apalancamiento * p['monto'] ) for p in st.session_state.posiciones])
+        c3.metric("PNL FLOTANTE", f"${pnl_flotante:.2f}")
 
-        # 4. Gráfico
+        # 5. GRÁFICO DE REJILLAS
         fig = go.Figure()
-        fig.add_trace(go.Scatter(y=st.session_state.precios_hist, mode='lines+markers', name='Precio', line=dict(color='#00FF00')))
-        fig.add_trace(go.Scatter(y=st.session_state.kalman_hist, mode='lines', name='IA', line=dict(color='#FF00FF', dash='dot')))
-        if st.session_state.comprado:
-            fig.add_hline(y=st.session_state.entrada, line_color="white", annotation_text="COMPRA")
+        fig.add_trace(go.Scatter(y=st.session_state.precios_hist, mode='lines', name='Precio', line=dict(color='#00FF00')))
+        # Dibujar líneas de las rejillas activas
+        for p in st.session_state.posiciones:
+            fig.add_hline(y=p['precio'], line_dash="dot", line_color="white")
+            fig.add_hline(y=p['precio']*(1+distancia_grid), line_dash="dash", line_color="gold")
+
+        fig.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', height=300, margin=dict(l=0,r=0,t=0,b=0))
         st.plotly_chart(fig, use_container_width=True)
 
-        # 5. LÓGICA DE TRADING REAL
-        evento = "VIGILANDO"
-        res_t = 0.0
-        
-        if not st.session_state.comprado:
-            # CONDICIÓN DE COMPRA: Precio bajo la IA Y RSI bajo (sobreventa)
-            if precio < st.session_state.x_est and rsi < 35:
-                st.session_state.comprado = True
-                st.session_state.entrada = precio
-                st.session_state.saldo -= monto_trade
-                evento = "🛒 COMPRA"
-        else:
-            # CONDICIÓN DE VENTA
-            diff = (precio - st.session_state.entrada)
-            perc = diff / st.session_state.entrada
-            
-            # Vender por TP, SL o RSI alto
-            if perc >= tp_perc or perc <= -sl_perc or rsi > 70:
-                res_t = diff * (monto_trade / st.session_state.entrada)
-                st.session_state.saldo += (monto_trade + res_t)
-                st.session_state.ganancia_acumulada += res_t
-                if res_t > 0: st.session_state.trades_ganados += 1
-                else: st.session_state.trades_perdidos += 1
-                st.session_state.comprado = False
-                evento = "💰 VENTA"
-            else:
-                evento = "🎯 DENTRO"
-
-        # 6. Historial y Efectividad
-        st.write(f"✅ Ganados: {st.session_state.trades_ganados} | ❌ Perdidos: {st.session_state.trades_perdidos} | Neto: ${st.session_state.ganancia_acumulada:.2f}")
+        # 6. ESTADÍSTICAS Y LOG
+        st.write(f"💵 Billetera: ${st.session_state.saldo:,.2f} | 📈 Ganancia Realizada: ${st.session_state.ganancia_acumulada:,.2f}")
         
         hora = datetime.now().strftime("%H:%M:%S")
-        nuevo_log = pd.DataFrame([{"Hora": hora, "Evento": evento, "Precio": f"${precio:,.2f}", "Resultado": f"${res_t:.4f}"}])
+        nuevo_log = pd.DataFrame([{"Hora": hora, "Evento": evento, "Precio": f"${precio:,.2f}", "PNL": f"${pnl_flotante:.2f}"}])
         st.session_state.log_df = pd.concat([nuevo_log, st.session_state.log_df]).reset_index(drop=True)
-        st.dataframe(st.session_state.log_df, use_container_width=True, height=200)
+        st.dataframe(st.session_state.log_df.head(10), use_container_width=True)
 
-        time.sleep(3)
+        time.sleep(4)
         st.rerun()
 
     except Exception as e:
-        st.info("Actualizando señales...")
+        st.error(f"Error: {e}")
         time.sleep(2)
         st.rerun()
-        
