@@ -28,4 +28,4 @@
         if len(st.session_state.posiciones) < niveles_max:
             proximo_buy = st.session_state.posiciones[-1]['precio'] * (1 - distancia_grid)
             fig.add_hline(y=proximo_buy, line_dash="dot", line_color="red", annotation_text="PRÓXIMA COMPRA")
-            
+                
