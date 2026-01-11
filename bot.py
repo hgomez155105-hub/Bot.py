@@ -10,7 +10,7 @@ import numpy as np
 st.set_page_config(page_title="AI Scalper - H y G", layout="centered")
 
 # --- ENLACE DE TU BASE DE DATOS (REEMPLAZA ESTE LINK) ---
-LINK_DB = "https://docs.google.com/spreadsheets/d/1kqjC2mMJsOXx5v348va89xlwMjVvF8F8GdZqbmIJvpc/edit?usp=drivesdk"
+LINK_DB = "https://docs.google.com/spreadsheets/d/1nYyINRPF-cIiAMsKInTxaO6wdptsitVfZnFq-o1Wo1Y/export?format=csv"
 # Enlace directo a tu Telegram
 LINK_TELEGRAM = "https://t.me/HyGinovaciones"
 
