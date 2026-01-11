@@ -66,12 +66,10 @@ else:
             st.session_state.autenticado = False
             st.rerun()
         modo = st.radio("Entorno:", ["🧪 MODO DEMO", "⚡ MODO REAL"])
-        lista_monedas = ["SOL/USDT", "BTC/USDT", "ETH/USDT", "BNB/USDT", "MATIC/USDT", "DOGE/USDT"]
+        lista_monedas = ["SOL/USDT", "BTC/USDT", "ETH/USDT", "BNB/USDT", "MATIC/USDT", "DOGE/USDT", "ADA/USDT", "XRP/USDT"]
         par = st.selectbox("Activo:", lista_monedas)
         leverage = st.slider("Apalancamiento", 1, 50, 25)
         monto = st.number_input("Inversión (USDT)", value=10.0)
-        
-        # --- LÍMITES AJUSTABLES ---
         tp_percent = st.slider("Take Profit (%)", 0.1, 5.0, 0.5) / 100
         sl_percent = st.slider("Stop Loss (%)", 0.1, 5.0, 0.3) / 100
 
@@ -87,33 +85,30 @@ else:
             if len(st.session_state.precios_hist) > 50: st.session_state.precios_hist.pop(0)
 
             if not st.session_state.posiciones:
-                st.session_state.posiciones.append({
-                    'entrada': precio, 
-                    'tp': precio * (1 + tp_percent),
-                    'sl': precio * (1 - sl_percent)
-                })
+                st.session_state.posiciones.append({'entrada': precio, 'tp': precio * (1 + tp_percent), 'sl': precio * (1 - sl_percent)})
                 if modo == "🧪 MODO DEMO": st.session_state.saldo_demo -= monto
 
             for i, pos in enumerate(st.session_state.posiciones):
-                # Ganancia (TP)
-                if precio >= pos['tp']:
+                if precio >= pos['tp'] or precio <= pos['sl']:
                     pnl = ((precio - pos['entrada']) / pos['entrada']) * leverage * monto
                     st.session_state.ganancia_acumulada += pnl
                     if modo == "🧪 MODO DEMO": st.session_state.saldo_demo += (monto + pnl)
                     st.session_state.posiciones.pop(i)
-                    st.toast(f"✅ WIN: +${pnl:.2f}", icon="💰")
-                    time.sleep(1); st.rerun()
-                # Pérdida (SL)
-                elif precio <= pos['sl']:
-                    pnl = ((precio - pos['entrada']) / pos['entrada']) * leverage * monto
-                    st.session_state.ganancia_acumulada += pnl
-                    if modo == "🧪 MODO DEMO": st.session_state.saldo_demo += (monto + pnl)
-                    st.session_state.posiciones.pop(i)
-                    st.toast(f"❌ LOSS: ${pnl:.2f}", icon="📉")
-                    time.sleep(1); st.rerun()
+                    st.rerun()
 
             c1, c2, c3 = st.columns(3)
             with c1: st.markdown(f"<div class='metric-card'><div class='metric-label'>{par}</div><div class='metric-value'>${precio:,.2f}</div></div>", unsafe_allow_html=True)
             with c2: st.markdown(f"<div class='metric-card'><div class='metric-label'>BALANCE</div><div class='metric-value'>${st.session_state.saldo_demo:,.2f}</div></div>", unsafe_allow_html=True)
-            with c3: st.markdown(f"<div class='metric-card'><div class='metric-label'>PNL</div><div class='metric-value' style='color:#00FFAA;'>+${st.session_state.ganancia_acumul
-                
+            with c3: st.markdown(f"<div class='metric-card'><div class='metric-label'>PNL TOTAL</div><div class='metric-value' style='color:#00FFAA;'>+${st.session_state.ganancia_acumulada:,.2f}</div></div>", unsafe_allow_html=True)
+
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(y=st.session_state.precios_hist, mode='lines', line=dict(color='#00FF00', width=2)))
+            if st.session_state.posiciones:
+                p = st.session_state.posiciones[0]
+                fig.add_hline(y=p['entrada'], line_dash="dot", line_color="white", annotation_text="ENTRY")
+                fig.add_hline(y=p['tp'], line_dash="dash", line_color="#F0B90B", annotation_text="TP")
+                fig.add_hline(y=p['sl'], line_dash="dash", line_color="#FF4B4B", annotation_text="SL")
+            fig.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', height=350, margin=dict(l=0,r=0,t=10,b=0), yaxis=dict(side="right", gridcolor="#23282E"), showlegend=False)
+            st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+            time.sleep(1.5); st.rerun()
+        except: time.sleep(1); st.rerun()
