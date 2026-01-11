@@ -167,4 +167,3 @@ if bot_activo:
         st.rerun()
 else:
     st.info("💡 Bot en espera. Selecciona tu modo (Demo/Real) y presiona 'Activar Algoritmo'.")
-            
