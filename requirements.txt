@@ -2,7 +2,11 @@ streamlit
 pandas
 requests
 numpy
+plotlystreamlit
+pandas
+requests
 plotly
+numpy
 ccxt
 pandas
 plotly
