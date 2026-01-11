@@ -45,7 +45,7 @@ def validar_usuario(u, c):
         claves_db = df_users['clave'].astype(str).str.strip()
         check = df_users[(usuarios_db == u_ingresado) & (claves_db == c_ingresado)]
         return not check.empty
-    except Exception as e:
+    except:
         return False
 
 def login():
@@ -76,32 +76,48 @@ else:
             'log_df': pd.DataFrame(columns=["Hora", "Evento", "Precio", "PNL"]),
             'ultimo_par': "", 'ultimo_modo': ""
         })
+    
     with st.sidebar:
-        st.markdown(f"👤 Usuario: **{st.session_state.user_name}**")
+        st.markdown(f"👤 **{st.session_state.user_name}**")
         if st.button("Cerrar Sesión"):
             st.session_state.autenticado = False
             st.rerun()
+        
+        st.markdown("---")
         modo = st.radio("Entorno:", ["🧪 MODO DEMO", "⚡ MODO REAL"])
         es_real = modo == "⚡ MODO REAL"
-        par = st.selectbox("Activo:", ["SOL/USDT", "BTC/USDT", "ETH/USDT"])
+        
+        # --- LISTA EXTENDIDA DE MONEDAS ---
+        lista_monedas = [
+            "SOL/USDT", "BTC/USDT", "ETH/USDT", "BNB/USDT", 
+            "ADA/USDT", "MATIC/USDT", "XRP/USDT", "DOT/USDT", "DOGE/USDT"
+        ]
+        par = st.selectbox("Seleccionar Activo:", lista_monedas)
+        
         if par != st.session_state.ultimo_par or modo != st.session_state.ultimo_modo:
             st.session_state.posiciones = []; st.session_state.precios_hist = []
             st.session_state.ultimo_par = par; st.session_state.ultimo_modo = modo
+            
         leverage = st.slider("Apalancamiento", 1, 50, 25)
-        monto = st.number_input("Inversión (USDT)", value=2.0)
-        dist_grid = st.slider("Profit (%)", 0.05, 1.0, 0.1) / 100
+        monto = st.number_input("Inversión (USDT)", value=10.0)
+        dist_grid = st.slider("Profit (%)", 0.05, 2.0, 0.2) / 100
 
-    st.markdown("<p style='text-align: center; color: #848E9C;'>Saludos de <b>H y G inovaciones</b></p>", unsafe_allow_html=True)
-    bot_on = st.toggle("ENCENDER ALGORITMO")
+    st.markdown("<p style='text-align: center; color: #848E9C;'>Panel de Control <b>H y G Inovaciones</b></p>", unsafe_allow_html=True)
+    bot_on = st.toggle("EJECUTAR ALGORITMO")
+
     if bot_on:
         try:
-            res = requests.get(f"https://min-api.cryptocompare.com/data/price?fsym={par.split('/')[0]}&tsyms=USD").json()
+            # Obtenemos precio de la moneda seleccionada
+            coin = par.split('/')[0]
+            res = requests.get(f"https://min-api.cryptocompare.com/data/price?fsym={coin}&tsyms=USD").json()
             precio = float(res['USD'])
             st.session_state.precios_hist.append(precio)
             if len(st.session_state.precios_hist) > 40: st.session_state.precios_hist.pop(0)
+            
             if not st.session_state.posiciones:
                 st.session_state.posiciones.append({'precio': precio})
                 if not es_real: st.session_state.saldo_demo -= monto
+
             for i, pos in enumerate(st.session_state.posiciones):
                 target = pos['precio'] * (1 + dist_grid)
                 if precio >= target:
@@ -110,16 +126,20 @@ else:
                     st.session_state.ganancia_acumulada += pnl
                     st.session_state.posiciones.pop(i)
                     st.rerun()
+
+            # --- MÉTRICAS VISUALES ---
             c1, c2, c3 = st.columns(3)
-            with c1: st.markdown(f"<div class='metric-card'><div class='metric-label'>PRECIO</div><div class='metric-value'>${precio:,.2f}</div></div>", unsafe_allow_html=True)
+            with c1: st.markdown(f"<div class='metric-card'><div class='metric-label'>{par}</div><div class='metric-value'>${precio:,.2f}</div></div>", unsafe_allow_html=True)
             with c2: 
                 bal = st.session_state.saldo_real if es_real else st.session_state.saldo_demo
-                st.markdown(f"<div class='metric-card'><div class='metric-label'>WALLET</div><div class='metric-value' style='color:#F0B90B;'>${bal:,.2f}</div></div>", unsafe_allow_html=True)
-            with c3: st.markdown(f"<div class='metric-card'><div class='metric-label'>GANANCIA</div><div class='metric-value' style='color:#00FFAA;'>${st.session_state.ganancia_acumulada:,.2f}</div></div>", unsafe_allow_html=True)
-            fig = go.Figure(go.Scatter(y=st.session_state.precios_hist, mode='lines', line=dict(color='#00FF00')))
-            fig.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', height=250, margin=dict(l=0,r=0,t=0,b=0), yaxis=dict(side="right"))
+                st.markdown(f"<div class='metric-card'><div class='metric-label'>BALANCE</div><div class='metric-value' style='color:#F0B90B;'>${bal:,.2f}</div></div>", unsafe_allow_html=True)
+            with c3: st.markdown(f"<div class='metric-card'><div class='metric-label'>PNL TOTAL</div><div class='metric-value' style='color:#00FFAA;'>+${st.session_state.ganancia_acumulada:,.2f}</div></div>", unsafe_allow_html=True)
+
+            fig = go.Figure(go.Scatter(y=st.session_state.precios_hist, mode='lines', line=dict(color='#00FF00', width=2)))
+            fig.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', height=300, margin=dict(l=0,r=0,t=0,b=0), yaxis=dict(side="right", gridcolor="#23282E"))
             st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
-            time.sleep(2); st.rerun()
+            
+            time.sleep(1.5); st.rerun()
         except:
             time.sleep(1); st.rerun()
-         
+        
