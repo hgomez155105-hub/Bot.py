@@ -1,4 +1,4 @@
- import streamlit as st
+import streamlit as st
 import pandas as pd
 import requests
 import time
@@ -32,60 +32,43 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- SISTEMA DE AUTENTICACIÓN MEJORADO ---
 if 'autenticado' not in st.session_state:
     st.session_state.autenticado = False
 
 def validar_usuario(u, c):
     try:
-        # Cargamos la base de datos
         df_users = pd.read_csv(LINK_DB)
-        
-        # LIMPIEZA TOTAL: Quitamos espacios y pasamos a minúsculas las cabeceras
         df_users.columns = df_users.columns.str.strip().str.lower()
-        
-        # Convertimos todo a texto y quitamos espacios en blanco
         u_ingresado = str(u).strip()
         c_ingresado = str(c).strip()
-        
-        # Buscamos el usuario (hacemos strip también a los datos del excel)
         usuarios_db = df_users['usuario'].astype(str).str.strip()
         claves_db = df_users['clave'].astype(str).str.strip()
-        
         check = df_users[(usuarios_db == u_ingresado) & (claves_db == c_ingresado)]
-        
         return not check.empty
     except Exception as e:
-        # Esto te ayudará a ver si hay un error real en la base de datos
-        st.error(f"Error de conexión: {e}")
         return False
 
 def login():
     st.markdown("<div class='login-box'>", unsafe_allow_html=True)
     st.markdown("<h2 style='text-align: center; color: white;'>H y G Inovaciones</h2>", unsafe_allow_html=True)
     st.markdown("<p style='text-align: center; color: #848E9C;'>Gestión de Licencias</p>", unsafe_allow_html=True)
-    
     u = st.text_input("Usuario")
     c = st.text_input("Contraseña", type="password")
-    
     if st.button("ACCEDER AL SISTEMA"):
         if validar_usuario(u, c):
             st.session_state.autenticado = True
             st.session_state.user_name = u
             st.rerun()
         else:
-            st.error("❌ Licencia inválida o incorrecta.")
-            st.markdown(f"[📩 Contactar Soporte para activar]({LINK_TELEGRAM})")
-    
+            st.error("❌ Licencia inválida.")
+            st.markdown(f"[📩 Contactar Soporte]({LINK_TELEGRAM})")
     st.markdown("---")
     st.link_button("🚀 SOLICITAR LICENCIA", LINK_TELEGRAM)
     st.markdown("</div>", unsafe_allow_html=True)
 
-# --- FLUJO PRINCIPAL ---
 if not st.session_state.autenticado:
     login()
 else:
-    # --- EL RESTO DE TU CÓDIGO DEL BOT SIGUE IGUAL ---
     if 'ganancia_acumulada' not in st.session_state:
         st.session_state.update({
             'saldo_demo': 1000.0, 'saldo_real': 0.0, 'ganancia_acumulada': 0.0,
@@ -93,62 +76,50 @@ else:
             'log_df': pd.DataFrame(columns=["Hora", "Evento", "Precio", "PNL"]),
             'ultimo_par': "", 'ultimo_modo': ""
         })
-
     with st.sidebar:
         st.markdown(f"👤 Usuario: **{st.session_state.user_name}**")
         if st.button("Cerrar Sesión"):
             st.session_state.autenticado = False
             st.rerun()
-        st.markdown("---")
         modo = st.radio("Entorno:", ["🧪 MODO DEMO", "⚡ MODO REAL"])
         es_real = modo == "⚡ MODO REAL"
         par = st.selectbox("Activo:", ["SOL/USDT", "BTC/USDT", "ETH/USDT"])
-        
         if par != st.session_state.ultimo_par or modo != st.session_state.ultimo_modo:
             st.session_state.posiciones = []; st.session_state.precios_hist = []
             st.session_state.ultimo_par = par; st.session_state.ultimo_modo = modo
-
         leverage = st.slider("Apalancamiento", 1, 50, 25)
         monto = st.number_input("Inversión (USDT)", value=2.0)
         dist_grid = st.slider("Profit (%)", 0.05, 1.0, 0.1) / 100
 
-    st.markdown("<p style='text-align: center; color: #848E9C;'>Reciba un cordial saludo de <b>H y G inovaciones</b></p>", unsafe_allow_html=True)
+    st.markdown("<p style='text-align: center; color: #848E9C;'>Saludos de <b>H y G inovaciones</b></p>", unsafe_allow_html=True)
     bot_on = st.toggle("ENCENDER ALGORITMO")
-
     if bot_on:
         try:
             res = requests.get(f"https://min-api.cryptocompare.com/data/price?fsym={par.split('/')[0]}&tsyms=USD").json()
             precio = float(res['USD'])
             st.session_state.precios_hist.append(precio)
             if len(st.session_state.precios_hist) > 40: st.session_state.precios_hist.pop(0)
-
             if not st.session_state.posiciones:
-                st.session_state.posiciones.append({'precio': precio, 'id': 1})
+                st.session_state.posiciones.append({'precio': precio})
                 if not es_real: st.session_state.saldo_demo -= monto
-
             for i, pos in enumerate(st.session_state.posiciones):
                 target = pos['precio'] * (1 + dist_grid)
                 if precio >= target:
                     pnl = ((precio - pos['precio']) / pos['precio']) * leverage * monto
                     if not es_real: st.session_state.saldo_demo += (monto + pnl)
                     st.session_state.ganancia_acumulada += pnl
-                    new_log = pd.DataFrame([{"Hora": datetime.now().strftime("%H:%M:%S"), "Evento": "WIN", "Precio": precio, "PNL": f"${pnl:.2f}"}])
-                    st.session_state.log_df = pd.concat([new_log, st.session_state.log_df]).reset_index(drop=True)
                     st.session_state.posiciones.pop(i)
                     st.rerun()
-
             c1, c2, c3 = st.columns(3)
             with c1: st.markdown(f"<div class='metric-card'><div class='metric-label'>PRECIO</div><div class='metric-value'>${precio:,.2f}</div></div>", unsafe_allow_html=True)
             with c2: 
                 bal = st.session_state.saldo_real if es_real else st.session_state.saldo_demo
                 st.markdown(f"<div class='metric-card'><div class='metric-label'>WALLET</div><div class='metric-value' style='color:#F0B90B;'>${bal:,.2f}</div></div>", unsafe_allow_html=True)
-            with c3: st.markdown(f"<div class='metric-card'><div class='metric-label'>ACUMULADO</div><div class='metric-value' style='color:#00FFAA;'>${st.session_state.ganancia_acumulada:,.2f}</div></div>", unsafe_allow_html=True)
-
+            with c3: st.markdown(f"<div class='metric-card'><div class='metric-label'>GANANCIA</div><div class='metric-value' style='color:#00FFAA;'>${st.session_state.ganancia_acumulada:,.2f}</div></div>", unsafe_allow_html=True)
             fig = go.Figure(go.Scatter(y=st.session_state.precios_hist, mode='lines', line=dict(color='#00FF00')))
             fig.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', height=250, margin=dict(l=0,r=0,t=0,b=0), yaxis=dict(side="right"))
             st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
-            st.dataframe(st.session_state.log_df.head(5), use_container_width=True)
             time.sleep(2); st.rerun()
         except:
             time.sleep(1); st.rerun()
-            
+         
