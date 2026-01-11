@@ -135,5 +135,14 @@ else:
             with c2: 
                 bal = st.session_state.saldo_real if es_real else st.session_state.saldo_demo
                 st.markdown(f"<div class='metric-card'><div class='metric-label'>WALLET</div><div class='metric-value' style='color:#F0B90B;'>${bal:,.2f}</div></div>", unsafe_allow_html=True)
-            with c3: st.markdown(f"<div class='metric-card'><div class='metric-label'>ACUMULADO</div><div class
-    
+            with c3: st.markdown(f"<div class='metric-card'><div class='metric-label'>ACUMULADO</div><div class='metric-value' style='color:#00FFAA;'>${st.session_state.ganancia_acumulada:,.2f}</div></div>", unsafe_allow_html=True)
+
+            # --- GRÁFICO ---
+            fig = go.Figure(go.Scatter(y=st.session_state.precios_hist, mode='lines', line=dict(color='#00FF00')))
+            fig.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', height=250, margin=dict(l=0,r=0,t=0,b=0), yaxis=dict(side="right"))
+            st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+
+            st.dataframe(st.session_state.log_df.head(5), use_container_width=True)
+            time.sleep(2); st.rerun()
+        except:
+            time.sleep(1); st.rerun()
