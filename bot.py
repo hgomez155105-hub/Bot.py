@@ -135,4 +135,3 @@ if bot_on:
         st.error(f"Error detectado: {e}")
         time.sleep(5)
         st.rerun()
-                    
