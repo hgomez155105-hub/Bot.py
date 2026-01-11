@@ -114,3 +114,41 @@ if bot_on:
                 evento = f"💰 VENTA N{pos.get('id', 'N/A')}" # Uso seguro de .get()
                 indices_a_borrar.append(i)
                 
+                # Registrar log
+                new_log = pd.DataFrame([{"Hora": datetime.now().strftime("%H:%M:%S"), "Evento": evento, "Precio": precio, "PNL": f"${pnl_realizado:.2f}", "Modo": modo}])
+                st.session_state.log_df = pd.concat([new_log, st.session_state.log_df]).reset_index(drop=True)
+                break # Evitar conflicto en el mismo ciclo
+
+        for index in indices_a_borrar:
+            if index < len(st.session_state.posiciones):
+                st.session_state.posiciones.pop(index)
+
+        # --- DASHBOARD ---
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("PRECIO", f"${precio:,.2f}")
+        c2.metric("RSI", f"{rsi:.1f}")
+        c3.metric("NIVELES", len(st.session_state.posiciones))
+        c4.metric("BILLETERA", f"${st.session_state.saldo_demo:,.2f}")
+
+        # --- GRÁFICO ---
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(y=st.session_state.precios_hist, mode='lines+markers', line=dict(color='#00FF00', width=2), name="Precio"))
+        
+        for p in st.session_state.posiciones:
+            # Línea de compra
+            fig.add_hline(y=p['precio'], line_color="white", annotation_text=f"L{p.get('id')} Compra")
+            # Línea de profit
+            fig.add_hline(y=p['precio']*(1+dist_grid), line_color="gold", line_dash="dash", annotation_text="Profit")
+
+        fig.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', height=400, yaxis=dict(color="white"))
+        st.plotly_chart(fig, use_container_width=True)
+
+        st.dataframe(st.session_state.log_df.head(10), use_container_width=True)
+        time.sleep(2)
+        st.rerun()
+
+    except Exception as e:
+        # Silenciar errores técnicos de refresco para no mostrar la pantalla roja
+        st.info(f"Actualizando datos... ({e})")
+        time.sleep(2)
+        st.rerun()
