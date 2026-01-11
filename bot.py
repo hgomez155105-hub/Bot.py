@@ -86,4 +86,65 @@ if bot_on:
 
         # 1. ENTRADA AGRESIVA (Nivel 1)
         if not st.session_state.posiciones:
-            
+            st.session_state.posiciones.append({'precio': precio, 'id': 1})
+            if not es_real: st.session_state.saldo_demo -= monto
+            else: st.session_state.saldo_real -= monto
+
+        # 2. RECOMPRA (Grid hacia abajo)
+        else:
+            ultima_pos = st.session_state.posiciones[-1]
+            if precio <= ultima_pos['precio'] * (1 - dist_recompra):
+                nuevo_id = len(st.session_state.posiciones) + 1
+                st.session_state.posiciones.append({'precio': precio, 'id': nuevo_id})
+                if not es_real: st.session_state.saldo_demo -= monto
+                else: st.session_state.saldo_real -= monto
+                
+                new_log = pd.DataFrame([{"Hora": datetime.now().strftime("%H:%M:%S"), "Evento": f"COMPRA N{nuevo_id}", "Precio": precio, "PNL": "---"}])
+                st.session_state.log_df = pd.concat([new_log, st.session_state.log_df]).reset_index(drop=True)
+
+        # 3. CIERRE POR PROFIT O RSI ALTO
+        for i, pos in enumerate(st.session_state.posiciones):
+            target = pos['precio'] * (1 + dist_grid)
+            if (precio >= target or rsi_actual >= 70) and precio > pos['precio']:
+                pnl = ((precio - pos['precio']) / pos['precio']) * leverage * monto
+                
+                if not es_real: st.session_state.saldo_demo += (monto + pnl)
+                else: st.session_state.saldo_real += (monto + pnl)
+                
+                st.session_state.ganancia_acumulada += pnl
+                new_log = pd.DataFrame([{"Hora": datetime.now().strftime("%H:%M:%S"), "Evento": f"PROFIT N{pos['id']}", "Precio": precio, "PNL": f"${pnl:.2f}"}])
+                st.session_state.log_df = pd.concat([new_log, st.session_state.log_df]).reset_index(drop=True)
+                st.session_state.posiciones.pop(i)
+                st.rerun()
+
+        # --- PANEL DE MÉTRICAS (LO QUE PEDISTE) ---
+        c1, c2, c3 = st.columns(3)
+        valor_billetera = st.session_state.saldo_real if es_real else st.session_state.saldo_demo
+        label_billetera = "BILLETERA REAL" if es_real else "BILLETERA DEMO"
+
+        with c1: st.markdown(f"<div class='metric-card'><div class='metric-label'>PRECIO</div><div class='metric-value'>${precio:,.2f}</div></div>", unsafe_allow_html=True)
+        with c2: st.markdown(f"<div class='metric-card'><div class='metric-label'>{label_billetera}</div><div class='metric-value' style='color:#F0B90B;'>${valor_billetera:,.2f}</div></div>", unsafe_allow_html=True)
+        with c3: st.markdown(f"<div class='metric-card'><div class='metric-label'>ACUMULADO</div><div class='metric-value' style='color:#00FFAA;'>${st.session_state.ganancia_acumulada:,.2f}</div></div>", unsafe_allow_html=True)
+
+        # --- GRÁFICO (MANTENIDO) ---
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(y=st.session_state.precios_hist, mode='lines', line=dict(color='#00FF00', width=2)))
+        for p in st.session_state.posiciones:
+            fig.add_hline(y=p['precio'], line_color="white", line_width=1, annotation_text=f"N{p['id']} ENTRY")
+            fig.add_hline(y=p['precio']*(1+dist_grid), line_color="#F0B90B", line_dash="dash", annotation_text="TARGET")
+
+        fig.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', height=280, 
+                          margin=dict(l=0,r=0,t=10,b=0), yaxis=dict(showgrid=False, color="gray", side="right"),
+                          xaxis=dict(showgrid=False, showticklabels=False))
+        st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+
+        st.dataframe(st.session_state.log_df.head(5), use_container_width=True)
+        time.sleep(2)
+        st.rerun()
+
+    except Exception:
+        time.sleep(1)
+        st.rerun()
+else:
+    st.info("👋 Bot en pausa. Selecciona el modo y configura en el menú lateral.")
+                
