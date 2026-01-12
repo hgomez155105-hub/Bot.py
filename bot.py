@@ -122,5 +122,56 @@ else:
                         })
                     st.toast("Malla creada por señal RSI")
 
-            # 2. Ejecutar niveles y DESCONT
+            # 2. Ejecutar niveles y DESCONTAR SALDO
+            for orden in st.session_state.ordenes_malla:
+                if orden['estado'] == 'pendiente' and precio_actual <= orden['precio']:
+                    if st.session_state.saldo_demo >= orden['monto']:
+                        orden['estado'] = 'ejecutada'
+                        st.session_state.posiciones.append({'entrada': precio_actual, 'monto': orden['monto']})
+                        st.session_state.saldo_demo -= orden['monto'] # DESCUENTO REAL
+                    else:
+                        st.warning("Fondos insuficientes para completar malla")
+
+            # 3. Calcular Profit y Salida
+            if st.session_state.posiciones:
+                precio_promedio = sum(p['entrada'] for p in st.session_state.posiciones) / len(st.session_state.posiciones)
+                target_profit = precio_promedio * (1 + tp_global)
+                
+                if precio_actual >= target_profit:
+                    total_monto = sum(p['monto'] for p in st.session_state.posiciones)
+                    pnl = (total_monto * tp_global) * lev
+                    st.session_state.saldo_demo += (total_monto + pnl) # Devolvemos capital + ganancia
+                    st.session_state.ganancia_acumulada += pnl
+                    st.session_state.posiciones = []
+                    st.session_state.ordenes_malla = []
+                    st.balloons()
+                    st.rerun()
+
+            # --- DASHBOARD ---
+            c1, c2, c3 = st.columns(3)
+            with c1: st.markdown(f"<div class='metric-card'>Precio {coin}<br><span class='metric-value'>${precio_actual:,.2f}</span></div>", unsafe_allow_html=True)
+            with c2: st.markdown(f"<div class='metric-card'>Saldo Disponible<br><span class='metric-value'>${st.session_state.saldo_demo:,.2f}</span></div>", unsafe_allow_html=True)
+            with c3: st.markdown(f"<div class='metric-card'>PNL Acumulado<br><span class='metric-value' style='color:#00FFAA;'>+${st.session_state.ganancia_acumulada:,.2f}</span></div>", unsafe_allow_html=True)
+
+            # --- GRÁFICO CON LÍNEAS DE NIVELES ---
+            fig = go.Figure()
+            # Línea de precio
+            fig.add_trace(go.Scatter(y=st.session_state.precios_hist, name="Precio", line=dict(color='#F0B90B', width=2)))
             
+            # Dibujar niveles de la malla
+            for orden in st.session_state.ordenes_malla:
+                color = "green" if orden['estado'] == 'ejecutada' else "gray"
+                fig.add_hline(y=orden['precio'], line_dash="dash", line_color=color, annotation_text="COMPRA")
+            
+            # Dibujar Take Profit si hay posición
+            if st.session_state.posiciones:
+                precio_promedio = sum(p['entrada'] for p in st.session_state.posiciones) / len(st.session_state.posiciones)
+                fig.add_hline(y=precio_promedio * (1 + tp_global), line_color="cyan", annotation_text="TAKE PROFIT")
+
+            st.plotly_chart(fig, use_container_width=True)
+            st.caption(f"RSI Actual: {rsi_val:.2f} | Esperando RSI < {rsi_seguridad} para nueva malla")
+
+            time.sleep(2); st.rerun()
+        except Exception as e:
+            st.error(f"Error: {e}")
+            time.sleep(2); st.rerun()
