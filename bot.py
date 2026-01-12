@@ -9,7 +9,7 @@ from datetime import datetime
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="H y G Inovaciones", layout="wide", page_icon="☀️")
 
-# --- FUNCIÓN BINANCE TOP 20 ---
+# --- FUNCIONES DE APOYO ---
 def obtener_top_20_binance():
     try:
         url = "https://api.binance.com/api/v3/ticker/24hr"
@@ -34,6 +34,7 @@ st.markdown("""
     .stApp { background-color: #0B0E11 !important; }
     [data-testid="stMetricValue"] { color: #F0B90B !important; font-size: 1.8rem !important; }
     .status-box { padding: 10px; border-radius: 10px; border: 1px solid #333; background: #1E2329; text-align: center; }
+    .panic-btn { background-color: #FF4B4B !important; color: white !important; font-weight: bold !important; border-radius: 5px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -46,17 +47,17 @@ if not st.session_state.autenticado:
     c1, c2, c3 = st.columns([1,1.5,1])
     with c2:
         st.image(LOGO_SOL, width=120)
-        st.markdown("<h1 style='text-align: center;'>H y G Inovaciones</h1>", unsafe_allow_html=True)
+        st.markdown("<h1 style='text-align: center; color: white;'>H y G Inovaciones</h1>", unsafe_allow_html=True)
         u = st.text_input("Usuario"); p = st.text_input("Contraseña", type="password")
         if st.button("ACCEDER AL TERMINAL PREDADOR", use_container_width=True):
             st.session_state.autenticado = True; st.session_state.user_name = u; st.rerun()
 else:
-    # --- SESIÓN ---
+    # --- INICIALIZACIÓN DE SESIÓN ---
     if 'saldo_demo' not in st.session_state:
         st.session_state.update({
             'saldo_demo': 1000.0, 'ganancia_total': 0.0, 'posiciones': [], 
             'precios_hist': [], 'ordenes_malla': [], 'ultimo_par': "", 
-            'historial_pnl': [], 'direccion': 'LONG', 'velas': []
+            'historial_pnl': [], 'direccion': 'LONG'
         })
 
     # --- HEADER ---
@@ -64,45 +65,56 @@ else:
     h1.markdown(f"### ☀️ H y G Inovaciones - 👤 {st.session_state.user_name}")
     h2.image(LOGO_SOL, width=50)
 
-    # --- SIDEBAR ---
+    # --- SIDEBAR (CONTROLES) ---
     with st.sidebar:
-        par = st.selectbox("🎯 Selección de Activo:", obtener_top_20_binance())
+        par = st.selectbox("🎯 Objetivo (Top 20 Binance):", obtener_top_20_binance())
         if par != st.session_state.ultimo_par:
-            st.session_state.update({'precios_hist': [], 'posiciones': [], 'ordenes_malla': [], 'ultimo_par': par, 'velas': []}); st.rerun()
+            st.session_state.update({'precios_hist': [], 'posiciones': [], 'ordenes_malla': [], 'ultimo_par': par}); st.rerun()
         
         st.divider()
         lev = st.slider("Apalancamiento", 1, 50, 20)
         niveles = st.number_input("Niveles de Malla", 1, 40, 10)
-        distancia = st.slider("Distancia entre niveles (%)", 0.01, 2.0, 0.1) / 100
-        inversion = st.number_input("Capital Total (USDT)", 10.0, 10000.0, 100.0)
-        tp_global = st.slider("Take Profit (%)", 0.01, 5.0, 0.15) / 100
+        distancia = st.slider("Distancia entre niveles (%)", 0.01, 1.0, 0.05) / 100
+        inversion = st.number_input("Inversión por Malla (USDT)", 10.0, 10000.0, 100.0)
+        tp_global = st.slider("Take Profit (%)", 0.01, 2.0, 0.10) / 100
 
-    # --- LÓGICA DE TRADING ---
-    bot_on = st.toggle("🚀 INICIAR ALGORITMO PREDADOR")
+        st.divider()
+        # BOTÓN DE PÁNICO
+        if st.button("🚨 BOTÓN DE PÁNICO: CERRAR TODO", use_container_width=True):
+            if st.session_state.posiciones:
+                st.session_state.update({'posiciones': [], 'ordenes_malla': []})
+                st.warning("Todas las operaciones han sido cerradas forzosamente.")
+                st.rerun()
+
+    # --- LÓGICA DEL BOT ---
+    bot_on = st.toggle("🚀 ACTIVAR ALGORITMO PREDADOR")
     
     if bot_on:
         try:
-            # Captura de datos
+            # Obtención de precio y RSI
             res = requests.get(f"https://min-api.cryptocompare.com/data/price?fsym={par.split('/')[0]}&tsyms=USD").json()
             p_act = float(res['USD'])
             st.session_state.precios_hist.append(p_act)
             if len(st.session_state.precios_hist) > 50: st.session_state.precios_hist.pop(0)
             
-            # Cálculo de tendencia simple (EMA 10)
+            # Detección de tendencia (EMA 10)
             ema = np.mean(st.session_state.precios_hist[-10:]) if len(st.session_state.precios_hist) >= 10 else p_act
-            tendencia = "LONG" if p_act >= ema else "SHORT"
+            tendencia_actual = "LONG" if p_act >= ema else "SHORT"
             rsi_val = calcular_rsi(st.session_state.precios_hist)
 
-            # 1. ABRIR MALLA
+            # 1. DISPARO DE MALLA DINÁMICO
             if not st.session_state.ordenes_malla:
-                st.session_state.direccion = tendencia
-                m_nivel = inversion / niveles
+                st.session_state.direccion = tendencia_actual
+                monto_n = inversion / niveles
                 for i in range(niveles):
+                    # Factor de malla: si es LONG compra hacia abajo, si es SHORT vende hacia arriba
                     f = (1 - (i * distancia)) if st.session_state.direccion == "LONG" else (1 + (i * distancia))
-                    st.session_state.ordenes_malla.append({'id': i+1, 'precio': round(p_act * f, 4), 'monto': round(m_nivel, 2), 'estado': 'PENDIENTE'})
-                st.toast(f"Modo {st.session_state.direccion} activado")
+                    st.session_state.ordenes_malla.append({
+                        'id': i+1, 'precio': round(p_act * f, 4), 'monto': round(monto_n, 2), 'estado': 'PENDIENTE'
+                    })
+                st.toast(f"Estrategia {st.session_state.direccion} iniciada.")
 
-            # 2. EJECUCIÓN
+            # 2. EJECUCIÓN DE ÓRDENES
             for o in st.session_state.ordenes_malla:
                 if o['estado'] == 'PENDIENTE':
                     hit = (st.session_state.direccion == "LONG" and p_act <= o['precio']) or \
@@ -113,7 +125,7 @@ else:
                             o['estado'] = 'EJECUTADA'
                             st.session_state.posiciones.append({'entrada': p_act, 'monto': o['monto']})
 
-            # 3. CIERRE (PICOTEO)
+            # 3. CIERRE POR PROFIT (PICOTEO)
             if st.session_state.posiciones:
                 p_prom = sum(p['entrada'] for p in st.session_state.posiciones) / len(st.session_state.posiciones)
                 t_inv = sum(p['monto'] for p in st.session_state.posiciones)
@@ -126,31 +138,49 @@ else:
                     cierra = p_act <= p_prom * (1 - tp_global)
 
                 if cierra and ganancia > 0:
-                    st.session_state.historial_pnl.append({'Hora': datetime.now().strftime("%H:%M:%S"), 'Par': par, 'Tipo': st.session_state.direccion, 'PNL': round(ganancia, 2)})
+                    st.session_state.historial_pnl.append({
+                        'Hora': datetime.now().strftime("%H:%M:%S"), 
+                        'Par': par, 
+                        'Modo': st.session_state.direccion, 
+                        'Captura': f"+${ganancia:.2f}"
+                    })
                     st.session_state.saldo_demo += (t_inv + ganancia)
                     st.session_state.ganancia_total += ganancia
                     st.session_state.update({'posiciones': [], 'ordenes_malla': []})
-                    st.balloons(); st.rerun()
+                    st.balloons()
+                    st.rerun()
 
-            # --- INTERFAZ ---
+            # --- PANEL DE CONTROL VISUAL ---
             c1, c2, c3 = st.columns(3)
             with c1: 
                 icon = "🚀" if st.session_state.direccion == "LONG" else "🏹"
-                st.metric(f"Precio {icon}", f"${p_act:,.4f}", f"Modo {st.session_state.direccion}")
-            with c2: st.metric("Saldo Demo", f"${st.session_state.saldo_demo:,.2f}")
-            with c3: st.metric("Cosecha Total", f"${st.session_state.ganancia_total:,.2f}", f"RSI: {rsi_val:.1f}")
+                st.metric(f"Precio ({icon} {st.session_state.direccion})", f"${p_act:,.4f}")
+            with c2: st.metric("Saldo Billetera", f"${st.session_state.saldo_demo:,.2f}")
+            with c3: st.metric("Cosecha Acumulada", f"${st.session_state.ganancia_total:,.2f}", f"RSI: {rsi_val:.1f}")
 
-            # Gráfico de Velas (Candlestick Simulado)
-            fig = go.Figure(data=[go.Scatter(x=list(range(len(st.session_state.precios_hist))), y=st.session_state.precios_hist, line=dict(color='#F0B90B', width=2), fill='tozeroy')])
+            # Gráfico de Área Predador
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(y=st.session_state.precios_hist, fill='tozeroy', line=dict(color='#F0B90B', width=2), name="Precio"))
             for o in st.session_state.ordenes_malla:
-                fig.add_hline(y=o['precio'], line_dash="dash", line_color="#00FF00" if o['estado'] == 'EJECUTADA' else "#555")
-            fig.update_layout(height=400, template="plotly_dark", margin=dict(l=0,r=0,b=0,t=0))
+                line_color = "rgba(0, 255, 0, 0.6)" if o['estado'] == 'EJECUTADA' else "rgba(255, 255, 255, 0.2)"
+                fig.add_hline(y=o['precio'], line_dash="dash", line_color=line_color)
+            
+            fig.update_layout(height=400, template="plotly_dark", margin=dict(l=0,r=0,b=0,t=10))
             st.plotly_chart(fig, use_container_width=True)
 
-            cola, colb = st.columns(2)
-            cola.subheader("📋 Malla Activa"); cola.dataframe(st.session_state.ordenes_malla, use_container_width=True)
-            colb.subheader("📜 Capturas Realizadas"); colb.dataframe(st.session_state.historial_pnl[::-1], use_container_width=True)
+            # Tablas de Datos
+            col_izq, col_der = st.columns(2)
+            with col_izq: 
+                st.markdown("##### 📋 Malla de Captura")
+                st.dataframe(st.session_state.ordenes_malla, use_container_width=True, height=250)
+            with col_der: 
+                st.markdown("##### 📜 Historial de Capturas")
+                st.dataframe(st.session_state.historial_pnl[::-1], use_container_width=True, height=250)
 
-            time.sleep(1); st.rerun()
-        except: time.sleep(1); st.rerun()
+            time.sleep(1)
+            st.rerun()
 
+        except Exception as e:
+            time.sleep(1)
+            st.rerun()
+    
