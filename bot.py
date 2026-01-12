@@ -154,4 +154,31 @@ else:
             c2.metric("Balance Disponible", f"${st.session_state.saldo_demo:,.2f}")
             c3.metric("PNL Acumulado", f"${st.session_state.ganancia_total:,.2f}", delta=f"RSI: {rsi_val:.1f}")
 
-            # Gráfico Amplio con escala
+            # Gráfico Amplio con escala dinámica
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(y=st.session_state.precios_hist, name="Precio", line=dict(color='#F0B90B', width=3)))
+            
+            # Dibujar niveles para que el gráfico se expanda
+            for o in st.session_state.ordenes_malla:
+                color = "green" if o['estado'] == 'EJECUTADA' else "rgba(150,150,150,0.3)"
+                fig.add_hline(y=o['precio'], line_dash="dash", line_color=color, annotation_text=f"Nivel {o['id']}")
+            
+            if st.session_state.posiciones:
+                fig.add_hline(y=p_tp, line_color="#00FFFF", line_width=2, annotation_text="Vender Aquí")
+
+            fig.update_layout(height=500, template="plotly_dark", margin=dict(l=0,r=0,b=0,t=10))
+            st.plotly_chart(fig, use_container_width=True)
+
+            # Tablas de Control
+            col_m, col_h = st.columns(2)
+            with col_m:
+                st.subheader("📋 Malla Activa")
+                st.table(pd.DataFrame(st.session_state.ordenes_malla))
+            with col_h:
+                st.subheader("📜 Historial de Cierres")
+                st.table(pd.DataFrame(st.session_state.historial_pnl))
+
+            time.sleep(1); st.rerun()
+        except:
+            time.sleep(1); st.rerun()
+    
