@@ -112,3 +112,4 @@ else:
             st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
             time.sleep(1.5); st.rerun()
         except: time.sleep(1); st.rerun()
+            
