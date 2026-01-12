@@ -25,13 +25,13 @@ st.markdown("""
         background: #1E2329; padding: 25px; border-radius: 15px;
         border: 1px solid #F0B90B; margin-top: 30px;
     }
-    #MainMenu, footer, header {visibility: hidden;}
     </style>
     """, unsafe_allow_html=True)
 
 if 'autenticado' not in st.session_state:
     st.session_state.autenticado = False
 
+# --- LÓGICA DE LOGIN ---
 def validar_usuario(u, c):
     try:
         df_users = pd.read_csv(LINK_DB)
@@ -52,54 +52,49 @@ if not st.session_state.autenticado:
             st.session_state.autenticado, st.session_state.user_name = True, u
             st.rerun()
         else: st.error("❌ Licencia inválida.")
-    st.link_button("🚀 SOLICITAR LICENCIA", LINK_TELEGRAM, use_container_width=True)
     st.markdown("</div>", unsafe_allow_html=True)
 else:
+    # --- INICIALIZACIÓN ---
     if 'ganancia_acumulada' not in st.session_state:
         st.session_state.update({'saldo_demo': 1000.0, 'ganancia_acumulada': 0.0, 'posiciones': [], 'precios_hist': [], 'ultimo_par': ""})
 
     with st.sidebar:
-        st.markdown(f"👤 **{st.session_state.user_name}**")
-        if st.button("Cerrar Sesión"):
-            st.session_state.autenticado = False
-            st.rerun()
+        st.header("🔐 Tus Credenciales")
+        st.info("Tus llaves API no se guardan en el servidor, solo en tu sesión actual.")
         
-        st.markdown("---")
-        st.subheader("🔑 API CONFIG (REAL)")
-        api_key_input = st.text_input("API Key", type="password")
-        api_secret_input = st.text_input("Secret Key", type="password")
+        # EL USUARIO LAS PONE AQUÍ MANUALMENTE PARA PODER COMERCIALIZAR EL SOFT
+        api_key_user = st.text_input("Binance API Key", type="password")
+        api_secret_user = st.text_input("Binance Secret Key", type="password")
         
         st.markdown("---")
         modo = st.radio("Entorno:", ["🧪 MODO DEMO", "⚡ MODO REAL"])
         es_real = modo == "⚡ MODO REAL"
         
-        # --- +20 MONEDAS EN TENDENCIA ---
+        # --- +20 MONEDAS (ARREGLADO) ---
         lista_monedas = [
-            "SOL/USDT", "BTC/USDT", "ETH/USDT", "BNB/USDT", "XRP/USDT", 
-            "ADA/USDT", "DOGE/USDT", "MATIC/USDT", "DOT/USDT", "TRX/USDT",
-            "LINK/USDT", "AVAX/USDT", "SHIB/USDT", "LTC/USDT", "NEAR/USDT",
-            "FET/USDT", "RNDR/USDT", "PEPE/USDT", "WIF/USDT", "BONK/USDT",
-            "ARB/USDT", "OP/USDT", "SUI/USDT", "APT/USDT"
+            "SOL/USDT", "BTC/USDT", "ETH/USDT", "BNB/USDT", "XRP/USDT", "ADA/USDT", 
+            "DOGE/USDT", "MATIC/USDT", "DOT/USDT", "TRX/USDT", "LINK/USDT", "AVAX/USDT", 
+            "SHIB/USDT", "FET/USDT", "RNDR/USDT", "PEPE/USDT", "WIF/USDT", "BONK/USDT",
+            "ARB/USDT", "OP/USDT", "SUI/USDT", "APT/USDT", "NEAR/USDT", "LTC/USDT"
         ]
-        par = st.selectbox("Activo en Tendencia:", lista_monedas)
+        par = st.selectbox("Seleccionar Activo:", lista_monedas)
         
-        # Reset si cambia la moneda
         if par != st.session_state.ultimo_par:
             st.session_state.posiciones = []
             st.session_state.precios_hist = []
             st.session_state.ultimo_par = par
 
-        leverage = st.slider("Apalancamiento", 1, 50, 25)
-        monto = st.number_input("Inversión (USDT)", value=10.0)
-        tp_percent = st.slider("Take Profit (%)", 0.1, 5.0, 0.5) / 100
-        sl_percent = st.slider("Stop Loss (%)", 0.1, 5.0, 0.3) / 100
+        leverage = st.slider("Apalancamiento", 1, 50, 20)
+        monto = st.number_input("Monto (USDT)", value=10.0)
+        tp_percent = st.slider("TP %", 0.1, 5.0, 0.5) / 100
+        sl_percent = st.slider("SL %", 0.1, 5.0, 0.5) / 100
 
-    st.markdown("<p style='text-align: center; color: #848E9C;'>Panel de Control - <b>H y G Inovaciones</b></p>", unsafe_allow_html=True)
-    bot_on = st.toggle("EJECUTAR ALGORITMO")
+    st.subheader(f"Trading con {par}")
+    bot_on = st.toggle("ENCENDER BOT")
 
     if bot_on:
-        if es_real and (not api_key_input or not api_secret_input):
-            st.error("⚠️ Falta configurar API Keys en la barra lateral.")
+        if es_real and (not api_key_user or not api_secret_user):
+            st.error("⚠️ Error: Debes ingresar tus API Keys para operar en Real.")
             st.stop()
             
         try:
@@ -107,7 +102,7 @@ else:
             res = requests.get(f"https://min-api.cryptocompare.com/data/price?fsym={coin}&tsyms=USD").json()
             precio = float(res['USD'])
             st.session_state.precios_hist.append(precio)
-            if len(st.session_state.precios_hist) > 50: st.session_state.precios_hist.pop(0)
+            if len(st.session_state.precios_hist) > 40: st.session_state.precios_hist.pop(0)
 
             if not st.session_state.posiciones:
                 st.session_state.posiciones.append({'entrada': precio, 'tp': precio * (1 + tp_percent), 'sl': precio * (1 - sl_percent)})
@@ -121,12 +116,12 @@ else:
                     st.session_state.posiciones.pop(i)
                     st.rerun()
 
-            c1, c2, c3 = st.columns(3)
-            with c1: st.markdown(f"<div class='metric-card'><div class='metric-label'>{par}</div><div class='metric-value'>${precio:,.2f}</div></div>", unsafe_allow_html=True)
-            with c2: 
+            col1, col2, col3 = st.columns(3)
+            with col1: st.markdown(f"<div class='metric-card'><div class='metric-label'>{par}</div><div class='metric-value'>${precio:,.4f}</div></div>", unsafe_allow_html=True)
+            with col2: 
                 bal = "⚡ REAL" if es_real else f"${st.session_state.saldo_demo:,.2f}"
                 st.markdown(f"<div class='metric-card'><div class='metric-label'>BALANCE</div><div class='metric-value'>{bal}</div></div>", unsafe_allow_html=True)
-            with c3: st.markdown(f"<div class='metric-card'><div class='metric-label'>PNL TOTAL</div><div class='metric-value' style='color:#00FFAA;'>+${st.session_state.ganancia_acumulada:,.2f}</div></div>", unsafe_allow_html=True)
+            with col3: st.markdown(f"<div class='metric-card'><div class='metric-label'>GANANCIA</div><div class='metric-value' style='color:#00FFAA;'>+${st.session_state.ganancia_acumulada:,.2f}</div></div>", unsafe_allow_html=True)
 
             fig = go.Figure()
             fig.add_trace(go.Scatter(y=st.session_state.precios_hist, mode='lines', line=dict(color='#00FF00', width=2)))
