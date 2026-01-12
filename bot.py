@@ -96,5 +96,54 @@ else:
             res = requests.get(f"https://min-api.cryptocompare.com/data/price?fsym={coin}&tsyms=USD").json()
             precio = float(res['USD'])
             st.session_state.precios_hist.append(precio)
-            if len(st.session_state.precios_hist) > 50: st.session_state.precios_hist.pop(0
+            if len(st.session_state.precios_hist) > 50: st.session_state.precios_hist.pop(0)
+
+            # --- LÓGICA DE TRADING ---
+            if not st.session_state.posiciones:
+                if es_real:
+                    st.info("🚀 Abriendo posición real en Exchange...")
+                    # Aquí iría: exchange.create_market_buy_order(par, monto)
+                
+                st.session_state.posiciones.append({
+                    'entrada': precio, 
+                    'tp': precio * (1 + tp_percent),
+                    'sl': precio * (1 - sl_percent)
+                })
+                if not es_real: st.session_state.saldo_demo -= monto
+
+            for i, pos in enumerate(st.session_state.posiciones):
+                if precio >= pos['tp'] or precio <= pos['sl']:
+                    if es_real:
+                        st.success("💰 Cerrando posición real con Profit...")
+                        # Aquí iría: exchange.create_market_sell_order(par, monto)
+                    
+                    pnl = ((precio - pos['entrada']) / pos['entrada']) * leverage * monto
+                    st.session_state.ganancia_acumulada += pnl
+                    if not es_real: st.session_state.saldo_demo += (monto + pnl)
+                    st.session_state.posiciones.pop(i)
+                    st.rerun()
+
+            # --- PANEL VISUAL ---
+            c1, c2, c3 = st.columns(3)
+            with c1: st.markdown(f"<div class='metric-card'><div class='metric-label'>{par}</div><div class='metric-value'>${precio:,.2f}</div></div>", unsafe_allow_html=True)
+            with c2: 
+                balance_txt = "CONECTADO" if es_real else f"${st.session_state.saldo_demo:,.2f}"
+                st.markdown(f"<div class='metric-card'><div class='metric-label'>BALANCE</div><div class='metric-value'>{balance_txt}</div></div>", unsafe_allow_html=True)
+            with c3: st.markdown(f"<div class='metric-card'><div class='metric-label'>PNL</div><div class='metric-value' style='color:#00FFAA;'>+${st.session_state.ganancia_acumulada:,.2f}</div></div>", unsafe_allow_html=True)
+
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(y=st.session_state.precios_hist, mode='lines', line=dict(color='#00FF00', width=2)))
+            if st.session_state.posiciones:
+                p = st.session_state.posiciones[0]
+                fig.add_hline(y=p['entrada'], line_dash="dot", line_color="white", annotation_text="ENTRY")
+                fig.add_hline(y=p['tp'], line_dash="dash", line_color="#F0B90B", annotation_text="TP")
+                fig.add_hline(y=p['sl'], line_dash="dash", line_color="#FF4B4B", annotation_text="SL")
+            
+            fig.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', height=350, margin=dict(l=0,r=0,t=10,b=0), yaxis=dict(side="right", gridcolor="#23282E"), showlegend=False)
+            st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+            
+            time.sleep(1.5); st.rerun()
+        except Exception as e:
+            st.error(f"Error: {e}")
+            time.sleep(2); st.rerun()
             
