@@ -5,10 +5,12 @@ import time
 import plotly.graph_objects as go
 import numpy as np
 
-# --- CONFIGURACIÓN DE PÁGINA ---
+# --- CONFIGURACIÓN ---
 st.set_page_config(page_title="AI Scalper - H y G", layout="wide")
 
-# --- LÓGICA DE CÁLCULO RSI ---
+LINK_DB = "https://docs.google.com/spreadsheets/d/1nYyINRPF-cIiAMsKInTxaO6wdptsitVfZnFq-o1Wo1Y/export?format=csv"
+
+# --- LÓGICA RSI ---
 def calcular_rsi(precios, periodo=14):
     if len(precios) < periodo + 1: return 50
     deltas = np.diff(precios)
@@ -20,7 +22,7 @@ def calcular_rsi(precios, periodo=14):
     rs = avg_gain / avg_loss
     return 100 - (100 / (1 + rs))
 
-# --- ESTILO VISUAL BINANCE DARK ---
+# --- ESTILO ---
 st.markdown("""
     <style>
     .stApp { background-color: #0B0E11 !important; }
@@ -30,154 +32,140 @@ st.markdown("""
     }
     .metric-label { font-size: 0.8rem; color: #848E9C; }
     .metric-value { font-size: 1.2rem; font-weight: bold; color: #F0B90B; }
-    #MainMenu, footer, header {visibility: hidden;}
+    .login-box {
+        background: #1E2329; padding: 30px; border-radius: 15px;
+        border: 1px solid #F0B90B; margin: auto; max-width: 400px;
+    }
     </style>
     """, unsafe_allow_html=True)
 
-# --- SISTEMA DE SESIÓN ---
 if 'autenticado' not in st.session_state:
     st.session_state.autenticado = False
 
+# --- FUNCIÓN VALIDAR USUARIO ---
+def validar_usuario(u, c):
+    try:
+        df_users = pd.read_csv(LINK_DB)
+        df_users.columns = df_users.columns.str.strip().str.lower()
+        u_ingresado, c_ingresado = str(u).strip(), str(c).strip()
+        check = df_users[(df_users['usuario'].astype(str).str.strip() == u_ingresado) & 
+                         (df_users['clave'].astype(str).str.strip() == c_ingresado)]
+        return not check.empty
+    except: return False
+
+# --- PANTALLA DE LOGIN ---
 if not st.session_state.autenticado:
-    # Pantalla de acceso (puedes volver a poner tu lógica de Google Sheets aquí)
-    st.markdown("<h2 style='text-align: center; color: white;'>H y G Inovaciones</h2>", unsafe_allow_html=True)
-    if st.button("INGRESAR AL SISTEMA", use_container_width=True):
-        st.session_state.autenticado = True
-        st.rerun()
+    st.markdown("<br><br>", unsafe_allow_html=True)
+    with st.container():
+        st.markdown("<div class='login-box'>", unsafe_allow_html=True)
+        st.markdown("<h2 style='text-align: center; color: white;'>H y G Inovaciones</h2>", unsafe_allow_html=True)
+        user = st.text_input("Usuario")
+        password = st.text_input("Contraseña", type="password")
+        if st.button("ACCEDER AL SISTEMA", use_container_width=True):
+            if validar_usuario(user, password):
+                st.session_state.autenticado = True
+                st.session_state.user_name = user
+                st.rerun()
+            else:
+                st.error("❌ Credenciales incorrectas.")
+        st.markdown("</div>", unsafe_allow_html=True)
 else:
-    # Inicialización de variables de trading
+    # --- INICIALIZACIÓN DE TRADING ---
     if 'ganancia_acumulada' not in st.session_state:
         st.session_state.update({
             'saldo_demo': 1000.0, 'ganancia_acumulada': 0.0, 
             'posiciones': [], 'precios_hist': [], 'ordenes_pendientes': [], 'ultimo_par': ""
         })
 
-    # --- BARRA LATERAL: TODOS LOS CONTROLES MANUALES ---
+    # --- BARRA LATERAL: CONTROLES MANUALES ---
     with st.sidebar:
-        st.title("🛡️ Panel de Usuario")
-        
-        # 1. ENTORNO MANUAL
-        modo = st.radio("MODO DE TRADING:", ["🧪 MODO DEMO", "⚡ MODO REAL"])
+        st.title(f"👤 {st.session_state.user_name}")
+        if st.button("Cerrar Sesión"):
+            st.session_state.autenticado = False
+            st.rerun()
+            
+        st.markdown("---")
+        modo = st.radio("ENTORNO:", ["🧪 MODO DEMO", "⚡ MODO REAL"])
         es_real = modo == "⚡ MODO REAL"
         
-        st.markdown("---")
-        # 2. APIS MANUALES
-        st.subheader("🔑 Credenciales API")
-        user_api_key = st.text_input("Binance API Key", type="password", placeholder="Pega tu API Key")
-        user_api_secret = st.text_input("Binance Secret Key", type="password", placeholder="Pega tu Secret Key")
+        st.subheader("🔑 APIs Manuales")
+        api_k = st.text_input("Binance API Key", type="password")
+        api_s = st.text_input("Binance Secret Key", type="password")
         
-        st.markdown("---")
-        # 3. RSI MANUAL (Resguardo)
-        st.subheader("📉 Resguardo RSI")
-        rsi_manual = st.slider("Cerrar por RSI alto en:", 50, 95, 75, help="Si el RSI toca este nivel y estás en ganancia, el bot cierra para asegurar.")
+        st.subheader("🛡️ Resguardo RSI")
+        rsi_m = st.slider("Nivel RSI Manual", 50, 95, 70)
         
-        st.markdown("---")
-        # 4. MONEDA Y APALANCAMIENTO MANUAL
-        st.subheader("📊 Configuración de Par")
-        lista_monedas = ["SOL/USDT", "BTC/USDT", "ETH/USDT", "FET/USDT", "PEPE/USDT", "RNDR/USDT", "SUI/USDT", "NEAR/USDT", "ARB/USDT", "DOGE/USDT"]
-        par = st.selectbox("Activo a operar:", lista_monedas)
+        st.subheader("📊 Estrategia")
+        par = st.selectbox("Activo:", ["SOL/USDT", "BTC/USDT", "ETH/USDT", "FET/USDT", "PEPE/USDT", "RNDR/USDT"])
         
         if par != st.session_state.ultimo_par:
-            st.session_state.posiciones = []
-            st.session_state.ordenes_pendientes = []
-            st.session_state.ultimo_par = par
+            st.session_state.update({'posiciones': [], 'ordenes_pendientes': [], 'ultimo_par': par})
 
-        val_leverage = st.slider("Apalancamiento Manual (X)", 1, 50, 20)
-        
-        # 5. NIVELES MANUALES (Malla)
-        st.subheader("🕸️ Malla de Compra")
-        val_niveles = st.number_input("Cantidad de Niveles", 1, 30, 5)
-        val_distancia = st.slider("Distancia entre niveles (%)", 0.1, 10.0, 1.0) / 100
-        
-        # 6. MONTO Y PROFIT MANUAL
-        st.subheader("💰 Gestión de Capital")
-        val_monto_total = st.number_input("Inversión Total (USDT)", value=100.0)
-        val_profit_manual = st.slider("Profit Global Manual (%)", 0.1, 10.0, 0.5) / 100
+        lev = st.slider("Apalancamiento Manual", 1, 50, 20)
+        niv = st.number_input("Niveles de Malla", 1, 20, 5)
+        dist = st.slider("Distancia entre órdenes (%)", 0.1, 5.0, 1.0) / 100
+        monto = st.number_input("Inversión Total (USDT)", value=50.0)
+        tp_m = st.slider("Profit Global Manual (%)", 0.1, 5.0, 0.5) / 100
 
-    # --- CUERPO PRINCIPAL ---
-    st.subheader(f"Ejecutando: {par} en {modo}")
-    bot_on = st.toggle("ENCENDER ALGORITMO H y G")
+    # --- PANEL PRINCIPAL ---
+    st.subheader(f"Panel de Control: {par} ({modo})")
+    bot_on = st.toggle("EJECUTAR ALGORITMO")
 
     if bot_on:
-        # Validación de seguridad para Real
-        if es_real and (not user_api_key or not user_api_secret):
-            st.error("⚠️ Error: Faltan las API Keys para operar en Real.")
+        if es_real and (not api_k or not api_s):
+            st.warning("⚠️ Configura tus API Keys en la barra lateral.")
             st.stop()
 
         try:
-            # Obtener precio real
             coin = par.split('/')[0]
             res = requests.get(f"https://min-api.cryptocompare.com/data/price?fsym={coin}&tsyms=USD").json()
             precio_actual = float(res['USD'])
-            
             st.session_state.precios_hist.append(precio_actual)
-            if len(st.session_state.precios_hist) > 100: st.session_state.precios_hist.pop(0)
+            if len(st.session_state.precios_hist) > 50: st.session_state.precios_hist.pop(0)
             
-            # Cálculo de RSI
             rsi_actual = calcular_rsi(st.session_state.precios_hist)
 
-            # Lógica de Malla (Grid)
+            # Malla
             if not st.session_state.posiciones and not st.session_state.ordenes_pendientes:
-                monto_por_nivel = val_monto_total / val_niveles
-                for n in range(val_niveles):
-                    st.session_state.ordenes_pendientes.append({
-                        'precio': precio_actual * (1 - (n * val_distancia)),
-                        'monto': monto_por_nivel, 'ejecutada': False
-                    })
+                m_nivel = monto / niv
+                for n in range(niv):
+                    st.session_state.ordenes_pendientes.append({'precio': precio_actual * (1-(n*dist)), 'monto': m_nivel, 'ejecutada': False})
 
-            # Ejecución de órdenes
-            for orden in st.session_state.ordenes_pendientes:
-                if not orden['ejecutada'] and precio_actual <= orden['precio']:
-                    orden['ejecutada'] = True
-                    st.session_state.posiciones.append({'entrada': precio_actual, 'monto': orden['monto']})
-                    st.toast(f"🛒 Compra en nivel ejecutada: ${precio_actual}")
-
-            # Cierre de operaciones (Profit o RSI)
-            if st.session_state.posiciones:
-                p_promedio = sum(p['entrada'] for p in st.session_state.posiciones) / len(st.session_state.posiciones)
-                target_tp = p_promedio * (1 + val_profit_manual)
-                
-                # Regla de oro: Siempre en ganancia
-                estamos_en_verde = precio_actual > p_promedio
-                cierre_por_tp = precio_actual >= target_tp
-                cierre_por_rsi = rsi_actual >= rsi_manual and estamos_en_verde
-
-                if cierre_por_tp or cierre_por_rsi:
-                    total_invertido = sum(p['monto'] for p in st.session_state.posiciones)
-                    pnl_operacion = ((precio_actual - p_promedio) / p_promedio) * val_leverage * total_invertido
-                    
-                    st.session_state.ganancia_acumulada += pnl_operacion
-                    if not es_real: st.session_state.saldo_demo += (total_invertido + pnl_operacion)
-                    
-                    st.session_state.posiciones = []
-                    st.session_state.ordenes_pendientes = []
-                    st.balloons()
-                    st.success(f"💰 Operación Cerrada | Ganancia: +${pnl_operacion:.2f}")
-                    time.sleep(2); st.rerun()
-
-            # --- VISUALIZACIÓN DE MÉTRICAS ---
-            c1, c2, c3, c4 = st.columns(4)
-            with c1: st.markdown(f"<div class='metric-card'><div class='metric-label'>Precio {coin}</div><div class='metric-value'>${precio_actual:,.4f}</div></div>", unsafe_allow_html=True)
-            with c2: st.markdown(f"<div class='metric-card'><div class='metric-label'>RSI (14)</div><div class='metric-value'>{rsi_actual:.1f}</div></div>", unsafe_allow_html=True)
-            with c3: 
-                bal_card = f"${st.session_state.saldo_demo:,.2f}" if not es_real else "⚡ REAL"
-                st.markdown(f"<div class='metric-card'><div class='metric-label'>Balance</div><div class='metric-value'>{bal_card}</div></div>", unsafe_allow_html=True)
-            with c4: st.markdown(f"<div class='metric-card'><div class='metric-label'>PNL Acumulado</div><div class='metric-value' style='color:#00FFAA;'>+${st.session_state.ganancia_acumulada:,.2f}</div></div>", unsafe_allow_html=True)
-
-            # --- GRÁFICO PROFESIONAL ---
-            fig = go.Figure()
-            fig.add_trace(go.Scatter(y=st.session_state.precios_hist, mode='lines', line=dict(color='#00FF00', width=2)))
-            # Líneas de malla
+            # Compras
             for o in st.session_state.ordenes_pendientes:
-                color_linea = "white" if not o['ejecutada'] else "#0088FF"
-                fig.add_hline(y=o['precio'], line_dash="dot", line_color=color_linea)
-            # Línea de TP
-            if st.session_state.posiciones:
-                fig.add_hline(y=p_promedio * (1 + val_profit_manual), line_dash="dash", line_color="#F0B90B", annotation_text="PROFIT")
+                if not o['ejecutada'] and precio_actual <= o['precio']:
+                    o['ejecutada'] = True
+                    st.session_state.posiciones.append({'entrada': precio_actual, 'monto': o['monto']})
 
-            fig.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', height=400, margin=dict(l=0,r=0,t=0,b=0), yaxis=dict(side="right", gridcolor="#23282E"))
-            st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+            # Cierre
+            if st.session_state.posiciones:
+                p_prom = sum(p['entrada'] for p in st.session_state.posiciones) / len(st.session_state.posiciones)
+                en_verde = precio_actual > p_prom
+                if (precio_actual >= p_prom * (1+tp_m)) or (rsi_actual >= rsi_m and en_verde):
+                    total_inv = sum(p['monto'] for p in st.session_state.posiciones)
+                    pnl = ((precio_actual - p_prom) / p_prom) * lev * total_inv
+                    st.session_state.ganancia_acumulada += pnl
+                    if not es_real: st.session_state.saldo_demo += (total_inv + pnl)
+                    st.session_state.update({'posiciones': [], 'ordenes_pendientes': []})
+                    st.rerun()
+
+            # Dashboard
+            c1, c2, c3 = st.columns(3)
+            with c1: st.markdown(f"<div class='metric-card'><div class='metric-label'>{par}</div><div class='metric-value'>${precio_actual:,.4f}</div></div>", unsafe_allow_html=True)
+            with c2: 
+                bal = f"${st.session_state.saldo_demo:,.2f}" if not es_real else "⚡ REAL"
+                st.markdown(f"<div class='metric-card'><div class='metric-label'>Balance</div><div class='metric-value'>{bal}</div></div>", unsafe_allow_html=True)
+            with c3: st.markdown(f"<div class='metric-card'><div class='metric-label'>PNL</div><div class='metric-value' style='color:#00FFAA;'>+${st.session_state.ganancia_acumulada:,.2f}</div></div>", unsafe_allow_html=True)
+
+            # Gráfico
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(y=st.session_state.precios_hist, mode='lines', line=dict(color='#00FF00')))
+            for o in st.session_state.ordenes_pendientes:
+                fig.add_hline(y=o['precio'], line_dash="dot", line_color="white" if not o['ejecutada'] else "#0088FF")
+            
+            fig.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', height=350, margin=dict(l=0,r=0,t=0,b=0), yaxis=dict(side="right"))
+            st.plotly_chart(fig, use_container_width=True)
             
             time.sleep(1.5); st.rerun()
-        except Exception as e:
-            time.sleep(1); st.rerun()
+        except: time.sleep(1); st.rerun()
+        
