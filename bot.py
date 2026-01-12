@@ -8,13 +8,9 @@ from datetime import datetime
 # --- CONFIGURACIÓN ---
 st.set_page_config(page_title="AI Scalper - H y G", layout="centered")
 
-# --- ENLACE DE TU BASE DE DATOS ---
+# --- ENLACE DE TU BASE DE DATOS (USUARIOS) ---
 LINK_DB = "https://docs.google.com/spreadsheets/d/1nYyINRPF-cIiAMsKInTxaO6wdptsitVfZnFq-o1Wo1Y/export?format=csv"
 LINK_TELEGRAM = "https://t.me/HyGinovaciones"
-
-# --- COLOCA TUS API KEYS MANUALMENTE AQUÍ ---
-API_KEY = "TU_API_KEY_AQUI"
-API_SECRET = "TU_SECRET_KEY_AQUI"
 
 # --- ESTILO ---
 st.markdown("""
@@ -61,5 +57,85 @@ if not st.session_state.autenticado:
     st.link_button("🚀 SOLICITAR LICENCIA", LINK_TELEGRAM, use_container_width=True)
     st.markdown("</div>", unsafe_allow_html=True)
 else:
+    # --- INICIALIZACIÓN DE VARIABLES ---
     if 'ganancia_acumulada' not in st.session_state:
-        st.session_state.update({'saldo_demo': 10
+        st.session_state.update({'saldo_demo': 1000.0, 'ganancia_acumulada': 0.0, 'posiciones': [], 'precios_hist': []})
+
+    with st.sidebar:
+        st.markdown(f"👤 **{st.session_state.user_name}**")
+        if st.button("Cerrar Sesión"):
+            st.session_state.autenticado = False
+            st.rerun()
+        
+        st.markdown("---")
+        st.header("⚙️ CONFIG. API REAL")
+        # --- AQUÍ EL USUARIO PONE SUS LLAVES MANUALMENTE ---
+        user_api_key = st.text_input("Binance API Key", type="password", help="Pega tu API Key de Binance")
+        user_api_secret = st.text_input("Binance Secret Key", type="password", help="Pega tu Secret Key de Binance")
+        
+        st.markdown("---")
+        modo = st.radio("Entorno:", ["🧪 MODO DEMO", "⚡ MODO REAL"])
+        es_real = modo == "⚡ MODO REAL"
+        
+        par = st.selectbox("Activo:", ["SOL/USDT", "BTC/USDT", "ETH/USDT", "BNB/USDT", "MATIC/USDT"])
+        leverage = st.slider("Apalancamiento", 1, 50, 25)
+        monto = st.number_input("Inversión (USDT)", value=10.0)
+        tp_percent = st.slider("Take Profit (%)", 0.1, 5.0, 0.5) / 100
+        sl_percent = st.slider("Stop Loss (%)", 0.1, 5.0, 0.3) / 100
+
+    st.markdown("<p style='text-align: center; color: #848E9C;'>Panel de Control - <b>H y G Inovaciones</b></p>", unsafe_allow_html=True)
+    bot_on = st.toggle("EJECUTAR ALGORITMO")
+
+    if bot_on:
+        # Validación de llaves si es modo real
+        if es_real and (not user_api_key or not user_api_secret):
+            st.error("⚠️ Error: Debes ingresar tus API Keys en la barra lateral para usar el Modo Real.")
+            st.stop()
+
+        try:
+            coin = par.split('/')[0]
+            res = requests.get(f"https://min-api.cryptocompare.com/data/price?fsym={coin}&tsyms=USD").json()
+            precio = float(res['USD'])
+            st.session_state.precios_hist.append(precio)
+            if len(st.session_state.precios_hist) > 50: st.session_state.precios_hist.pop(0)
+
+            # Lógica de Apertura
+            if not st.session_state.posiciones:
+                st.session_state.posiciones.append({
+                    'entrada': precio, 
+                    'tp': precio * (1 + tp_percent),
+                    'sl': precio * (1 - sl_percent)
+                })
+                if not es_real: st.session_state.saldo_demo -= monto
+
+            # Lógica de Cierre
+            for i, pos in enumerate(st.session_state.posiciones):
+                if precio >= pos['tp'] or precio <= pos['sl']:
+                    pnl = ((precio - pos['entrada']) / pos['entrada']) * leverage * monto
+                    st.session_state.ganancia_acumulada += pnl
+                    if not es_real: st.session_state.saldo_demo += (monto + pnl)
+                    st.session_state.posiciones.pop(i)
+                    st.rerun()
+
+            # --- PANEL VISUAL ---
+            c1, c2, c3 = st.columns(3)
+            with c1: st.markdown(f"<div class='metric-card'><div class='metric-label'>{par}</div><div class='metric-value'>${precio:,.2f}</div></div>", unsafe_allow_html=True)
+            with c2: 
+                bal_txt = "CONECTADO" if es_real else f"${st.session_state.saldo_demo:,.2f}"
+                st.markdown(f"<div class='metric-card'><div class='metric-label'>BALANCE</div><div class='metric-value'>{bal_txt}</div></div>", unsafe_allow_html=True)
+            with c3: st.markdown(f"<div class='metric-card'><div class='metric-label'>PNL</div><div class='metric-value' style='color:#00FFAA;'>+${st.session_state.ganancia_acumulada:,.2f}</div></div>", unsafe_allow_html=True)
+
+            # --- GRÁFICO ---
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(y=st.session_state.precios_hist, mode='lines', line=dict(color='#00FF00', width=2)))
+            if st.session_state.posiciones:
+                p = st.session_state.posiciones[0]
+                fig.add_hline(y=p['entrada'], line_dash="dot", line_color="white", annotation_text="ENTRY")
+                fig.add_hline(y=p['tp'], line_dash="dash", line_color="#F0B90B", annotation_text="TP")
+                fig.add_hline(y=p['sl'], line_dash="dash", line_color="#FF4B4B", annotation_text="SL")
+            
+            fig.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', height=350, margin=dict(l=0,r=0,t=10,b=0), yaxis=dict(side="right", gridcolor="#23282E"), showlegend=False)
+            st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+            
+            time.sleep(1.5); st.rerun()
+        except: time.sleep(1); st.rerun()
