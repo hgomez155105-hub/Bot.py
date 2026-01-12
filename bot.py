@@ -117,4 +117,10 @@ if bot_on:
 
         # --- NUEVA TABLA DE MONITOREO ---
         st.subheader("📋 Estado de la Malla")
-        if st.session
+        if st.session_state.ordenes_malla:
+            df_malla = pd.DataFrame(st.session_state.ordenes_malla)
+            st.table(df_malla)
+
+        time.sleep(1); st.rerun()
+    except Exception as e:
+        time.sleep(1); st.rerun()
