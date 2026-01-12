@@ -6,7 +6,7 @@ import plotly.graph_objects as go
 import numpy as np
 
 # --- CONFIGURACIÓN ---
-st.set_page_config(page_title="AI Scalper - H y G", layout="wide")
+st.set_page_config(page_title="H y G Inovaciones", layout="wide")
 
 LINK_DB = "https://docs.google.com/spreadsheets/d/1nYyINRPF-cIiAMsKInTxaO6wdptsitVfZnFq-o1Wo1Y/export?format=csv"
 
@@ -30,7 +30,6 @@ st.markdown("""
         background: #1E2329; border: 1px solid #474D57;
         border-radius: 12px; padding: 15px; text-align: center;
     }
-    .metric-label { font-size: 0.8rem; color: #848E9C; }
     .metric-value { font-size: 1.2rem; font-weight: bold; color: #F0B90B; }
     .login-box {
         background: #1E2329; padding: 30px; border-radius: 15px;
@@ -42,17 +41,6 @@ st.markdown("""
 if 'autenticado' not in st.session_state:
     st.session_state.autenticado = False
 
-# --- FUNCIÓN VALIDAR USUARIO ---
-def validar_usuario(u, c):
-    try:
-        df_users = pd.read_csv(LINK_DB)
-        df_users.columns = df_users.columns.str.strip().str.lower()
-        u_ingresado, c_ingresado = str(u).strip(), str(c).strip()
-        check = df_users[(df_users['usuario'].astype(str).str.strip() == u_ingresado) & 
-                         (df_users['clave'].astype(str).str.strip() == c_ingresado)]
-        return not check.empty
-    except: return False
-
 # --- PANTALLA DE LOGIN ---
 if not st.session_state.autenticado:
     st.markdown("<br><br>", unsafe_allow_html=True)
@@ -61,111 +49,112 @@ if not st.session_state.autenticado:
         st.markdown("<h2 style='text-align: center; color: white;'>H y G Inovaciones</h2>", unsafe_allow_html=True)
         user = st.text_input("Usuario")
         password = st.text_input("Contraseña", type="password")
-        if st.button("ACCEDER AL SISTEMA", use_container_width=True):
-            if validar_usuario(user, password):
-                st.session_state.autenticado = True
-                st.session_state.user_name = user
-                st.rerun()
-            else:
-                st.error("❌ Credenciales incorrectas.")
+        if st.button("INGRESAR", use_container_width=True):
+            try:
+                df = pd.read_csv(LINK_DB)
+                df.columns = df.columns.str.strip().str.lower()
+                check = df[(df['usuario'].astype(str) == str(user)) & (df['clave'].astype(str) == str(password))]
+                if not check.empty:
+                    st.session_state.autenticado = True
+                    st.session_state.user_name = user
+                    st.rerun()
+                else: st.error("Datos incorrectos")
+            except: st.error("Error de conexión con DB")
         st.markdown("</div>", unsafe_allow_html=True)
 else:
-    # --- INICIALIZACIÓN DE TRADING ---
-    if 'ganancia_acumulada' not in st.session_state:
+    # --- INICIALIZACIÓN DE ESTADOS ---
+    if 'saldo_demo' not in st.session_state:
         st.session_state.update({
             'saldo_demo': 1000.0, 'ganancia_acumulada': 0.0, 
             'posiciones': [], 'precios_hist': [], 'ordenes_pendientes': [], 'ultimo_par': ""
         })
 
-    # --- BARRA LATERAL: CONTROLES MANUALES ---
+    # --- BARRA LATERAL ---
     with st.sidebar:
         st.title(f"👤 {st.session_state.user_name}")
-        if st.button("Cerrar Sesión"):
-            st.session_state.autenticado = False
-            st.rerun()
-            
-        st.markdown("---")
-        modo = st.radio("ENTORNO:", ["🧪 MODO DEMO", "⚡ MODO REAL"])
-        es_real = modo == "⚡ MODO REAL"
+        modo = st.radio("Entorno:", ["🧪 MODO DEMO", "⚡ MODO REAL"])
         
-        st.subheader("🔑 APIs Manuales")
-        api_k = st.text_input("Binance API Key", type="password")
-        api_s = st.text_input("Binance Secret Key", type="password")
+        st.subheader("📊 Configuración")
+        par = st.selectbox("Activo:", ["SOL/USDT", "BTC/USDT", "ETH/USDT", "FET/USDT", "PEPE/USDT"])
         
-        st.subheader("🛡️ Resguardo RSI")
-        rsi_m = st.slider("Nivel RSI Manual", 50, 95, 70)
-        
-        st.subheader("📊 Estrategia")
-        par = st.selectbox("Activo:", ["SOL/USDT", "BTC/USDT", "ETH/USDT", "FET/USDT", "PEPE/USDT", "RNDR/USDT"])
-        
+        # --- RESET AL CAMBIAR MONEDA ---
         if par != st.session_state.ultimo_par:
-            st.session_state.update({'posiciones': [], 'ordenes_pendientes': [], 'ultimo_par': par})
+            st.session_state.precios_hist = []
+            st.session_state.posiciones = []
+            st.session_state.ordenes_pendientes = []
+            st.session_state.ultimo_par = par
+            st.rerun()
 
-        lev = st.slider("Apalancamiento Manual", 1, 50, 20)
-        niv = st.number_input("Niveles de Malla", 1, 20, 5)
-        dist = st.slider("Distancia entre órdenes (%)", 0.1, 5.0, 1.0) / 100
-        monto = st.number_input("Inversión Total (USDT)", value=50.0)
-        tp_m = st.slider("Profit Global Manual (%)", 0.1, 5.0, 0.5) / 100
+        lev = st.slider("Apalancamiento", 1, 50, 20)
+        niv = st.number_input("Niveles de Malla", 1, 10, 5)
+        dist = st.slider("Distancia (%)", 0.1, 5.0, 0.5) / 100
+        monto_total = st.number_input("Inversión Total (USDT)", 10.0, 5000.0, 100.0)
+        tp_manual = st.slider("Take Profit (%)", 0.1, 5.0, 0.5) / 100
+        
+        st.subheader("🔑 API Keys (Solo Real)")
+        api_k = st.text_input("API Key", type="password")
+        api_s = st.text_input("Secret Key", type="password")
 
     # --- PANEL PRINCIPAL ---
-    st.subheader(f"Panel de Control: {par} ({modo})")
+    st.subheader(f"Trading: {par}")
     bot_on = st.toggle("EJECUTAR ALGORITMO")
 
     if bot_on:
-        if es_real and (not api_k or not api_s):
-            st.warning("⚠️ Configura tus API Keys en la barra lateral.")
-            st.stop()
-
         try:
+            # Obtener precio
             coin = par.split('/')[0]
             res = requests.get(f"https://min-api.cryptocompare.com/data/price?fsym={coin}&tsyms=USD").json()
             precio_actual = float(res['USD'])
             st.session_state.precios_hist.append(precio_actual)
-            if len(st.session_state.precios_hist) > 50: st.session_state.precios_hist.pop(0)
-            
-            rsi_actual = calcular_rsi(st.session_state.precios_hist)
+            if len(st.session_state.precios_hist) > 40: st.session_state.precios_hist.pop(0)
 
-            # Malla
+            # Crear Malla Inicial
             if not st.session_state.posiciones and not st.session_state.ordenes_pendientes:
-                m_nivel = monto / niv
+                m_por_nivel = monto_total / niv
                 for n in range(niv):
-                    st.session_state.ordenes_pendientes.append({'precio': precio_actual * (1-(n*dist)), 'monto': m_nivel, 'ejecutada': False})
+                    st.session_state.ordenes_pendientes.append({
+                        'precio': precio_actual * (1 - (n * dist)),
+                        'monto': m_por_nivel, 'ejecutada': False
+                    })
 
-            # Compras
+            # Ejecutar Compras y DESCONTAR SALDO
             for o in st.session_state.ordenes_pendientes:
                 if not o['ejecutada'] and precio_actual <= o['precio']:
-                    o['ejecutada'] = True
-                    st.session_state.posiciones.append({'entrada': precio_actual, 'monto': o['monto']})
+                    if st.session_state.saldo_demo >= o['monto']:
+                        o['ejecutada'] = True
+                        st.session_state.posiciones.append({'entrada': precio_actual, 'monto': o['monto']})
+                        # AQUÍ SE DESCUENTA EL DINERO DEL SALDO DEMO
+                        st.session_state.saldo_demo -= o['monto']
+                        st.toast(f"Compra ejecutada a ${precio_actual}")
+                    else:
+                        st.error("Saldo insuficiente en Demo")
 
-            # Cierre
+            # Cierre de Operación
             if st.session_state.posiciones:
                 p_prom = sum(p['entrada'] for p in st.session_state.posiciones) / len(st.session_state.posiciones)
-                en_verde = precio_actual > p_prom
-                if (precio_actual >= p_prom * (1+tp_m)) or (rsi_actual >= rsi_m and en_verde):
-                    total_inv = sum(p['monto'] for p in st.session_state.posiciones)
-                    pnl = ((precio_actual - p_prom) / p_prom) * lev * total_inv
-                    st.session_state.ganancia_acumulada += pnl
-                    if not es_real: st.session_state.saldo_demo += (total_inv + pnl)
+                if precio_actual >= p_prom * (1 + tp_manual):
+                    tot_invertido = sum(p['monto'] for p in st.session_state.posiciones)
+                    pnl_bruto = ((precio_actual - p_prom) / p_prom) * lev * tot_invertido
+                    
+                    # Devolver capital + ganancia al saldo
+                    st.session_state.saldo_demo += (tot_invertido + pnl_bruto)
+                    st.session_state.ganancia_acumulada += pnl_bruto
                     st.session_state.update({'posiciones': [], 'ordenes_pendientes': []})
+                    st.balloons()
                     st.rerun()
 
             # Dashboard
             c1, c2, c3 = st.columns(3)
-            with c1: st.markdown(f"<div class='metric-card'><div class='metric-label'>{par}</div><div class='metric-value'>${precio_actual:,.4f}</div></div>", unsafe_allow_html=True)
-            with c2: 
-                bal = f"${st.session_state.saldo_demo:,.2f}" if not es_real else "⚡ REAL"
-                st.markdown(f"<div class='metric-card'><div class='metric-label'>Balance</div><div class='metric-value'>{bal}</div></div>", unsafe_allow_html=True)
-            with c3: st.markdown(f"<div class='metric-card'><div class='metric-label'>PNL</div><div class='metric-value' style='color:#00FFAA;'>+${st.session_state.ganancia_acumulada:,.2f}</div></div>", unsafe_allow_html=True)
+            with c1: st.markdown(f"<div class='metric-card'><div class='metric-label'>Precio {coin}</div><div class='metric-value'>${precio_actual:,.2f}</div></div>", unsafe_allow_html=True)
+            with c2: st.markdown(f"<div class='metric-card'><div class='metric-label'>Disponible (DEMO)</div><div class='metric-value'>${st.session_state.saldo_demo:,.2f}</div></div>", unsafe_allow_html=True)
+            with c3: st.markdown(f"<div class='metric-card'><div class='metric-label'>Ganancia Total</div><div class='metric-value' style='color:#00FFAA;'>+${st.session_state.ganancia_acumulada:,.2f}</div></div>", unsafe_allow_html=True)
 
-            # Gráfico
+            # Gráfico scannable
             fig = go.Figure()
-            fig.add_trace(go.Scatter(y=st.session_state.precios_hist, mode='lines', line=dict(color='#00FF00')))
-            for o in st.session_state.ordenes_pendientes:
-                fig.add_hline(y=o['precio'], line_dash="dot", line_color="white" if not o['ejecutada'] else "#0088FF")
-            
-            fig.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', height=350, margin=dict(l=0,r=0,t=0,b=0), yaxis=dict(side="right"))
+            fig.add_trace(go.Scatter(y=st.session_state.precios_hist, mode='lines+markers', name="Precio", line=dict(color='#F0B90B')))
             st.plotly_chart(fig, use_container_width=True)
             
-            time.sleep(1.5); st.rerun()
-        except: time.sleep(1); st.rerun()
+            time.sleep(2); st.rerun()
+        except Exception as e:
+            time.sleep(2); st.rerun()
         
