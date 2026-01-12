@@ -84,5 +84,84 @@ else:
         rsi_compra = st.slider("RSI Entrada", 10, 70, 45)
         tp_global = st.slider("Take Profit (%)", 0.01, 5.0, 0.2) / 100
         
-        if
-        
+        if st.button("🚨 BOTÓN DE PÁNICO", use_container_width=True):
+            st.session_state.update({'posiciones': [], 'ordenes_malla': []})
+            st.rerun()
+
+    # --- LÓGICA DE DETECCIÓN ---
+    def obtener_tendencia(precios):
+        if len(precios) < 10: return "LONG"
+        ema = sum(precios[-10:]) / 10
+        return "LONG" if precios[-1] >= ema else "SHORT"
+
+    # --- BOT EN ACCIÓN ---
+    bot_on = st.toggle("🚀 ACTIVAR ALGORITMO PREDADOR")
+    if bot_on:
+        try:
+            res = requests.get(f"https://min-api.cryptocompare.com/data/price?fsym={par.split('/')[0]}&tsyms=USD").json()
+            precio_act = float(res['USD'])
+            st.session_state.precios_hist.append(precio_act)
+            if len(st.session_state.precios_hist) > 50: st.session_state.precios_hist.pop(0)
+            rsi_val = calcular_rsi(st.session_state.precios_hist)
+            tendencia_actual = obtener_tendencia(st.session_state.precios_hist)
+
+            # 1. DISPARAR MALLA
+            if not st.session_state.ordenes_malla:
+                if (tendencia_actual == "LONG" and rsi_val <= rsi_compra) or (tendencia_actual == "SHORT" and rsi_val >= (100 - rsi_compra)):
+                    st.session_state.direccion = tendencia_actual
+                    monto_n = inversion / niveles
+                    for i in range(niveles):
+                        factor = (1 - (i * distancia)) if st.session_state.direccion == "LONG" else (1 + (i * distancia))
+                        p_nivel = precio_act * factor
+                        st.session_state.ordenes_malla.append({'id': i+1, 'precio': round(p_nivel, 4), 'monto': round(monto_n, 2), 'estado': 'PENDIENTE'})
+                    st.toast(f"🎯 Malla {st.session_state.direccion} Iniciada")
+
+            # 2. EJECUCIÓN
+            for o in st.session_state.ordenes_malla:
+                if o['estado'] == 'PENDIENTE':
+                    hit = (st.session_state.direccion == "LONG" and precio_act <= o['precio']) or \
+                          (st.session_state.direccion == "SHORT" and precio_act >= o['precio'])
+                    if hit and st.session_state.saldo_demo >= o['monto']:
+                        st.session_state.saldo_demo -= o['monto']
+                        o['estado'] = 'EJECUTADA'
+                        st.session_state.posiciones.append({'entrada': precio_act, 'monto': o['monto']})
+
+            # 3. CIERRE (PICOTEO)
+            if st.session_state.posiciones:
+                p_prom = sum(p['entrada'] for p in st.session_state.posiciones) / len(st.session_state.posiciones)
+                t_inv = sum(p['monto'] for p in st.session_state.posiciones)
+                
+                if st.session_state.direccion == "LONG":
+                    ganancia_actual = (t_inv * (precio_act / p_prom - 1)) * lev
+                    condicion_cierre = precio_act >= p_prom * (1 + tp_global)
+                else:
+                    ganancia_actual = (t_inv * (1 - precio_act / p_prom)) * lev
+                    condicion_cierre = precio_act <= p_prom * (1 - tp_global)
+
+                if condicion_cierre and ganancia_actual > 0:
+                    st.session_state.historial_pnl.append({'Fecha': datetime.now().strftime("%H:%M:%S"), 'Par': par, 'Tipo': st.session_state.direccion, 'Ganancia': round(ganancia_actual, 2)})
+                    st.session_state.saldo_demo += (t_inv + ganancia_actual)
+                    st.session_state.ganancia_total += ganancia_actual
+                    st.session_state.update({'posiciones': [], 'ordenes_malla': []})
+                    st.balloons(); st.rerun()
+
+            # --- PANEL VISUAL ---
+            c1, c2, c3 = st.columns(3)
+            c1.metric(f"Precio ({st.session_state.direccion})", f"${precio_act:,.4f}")
+            c2.metric("Saldo Wallet", f"${st.session_state.saldo_demo:,.2f}")
+            c3.metric("Cosecha Total", f"${st.session_state.ganancia_total:,.2f}", delta=f"RSI: {rsi_val:.1f}")
+
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(y=st.session_state.precios_hist, name="Precio", line=dict(color='#F0B90B', width=3)))
+            for o in st.session_state.ordenes_malla:
+                fig.add_hline(y=o['precio'], line_dash="dash", line_color="green" if o['estado'] == 'EJECUTADA' else "grey")
+            fig.update_layout(height=350, template="plotly_dark", margin=dict(l=0,r=0,b=0,t=0))
+            st.plotly_chart(fig, use_container_width=True)
+
+            col_a, col_b = st.columns(2)
+            with col_a: st.subheader("📋 Malla"); st.dataframe(st.session_state.ordenes_malla, use_container_width=True)
+            with col_b: st.subheader("📜 Historial"); st.dataframe(st.session_state.historial_pnl[::-1], use_container_width=True)
+
+            time.sleep(1); st.rerun()
+        except: time.sleep(1); st.rerun()
+            
