@@ -77,18 +77,18 @@ def calcular_rsi(precios, periodo=14):
 
 def obtener_tendencia(precios, rsi):
     """
-    Tendencia simple combinando EMA corta + RSI:
-    - LONG si precio por encima de EMA y RSI < 70
-    - SHORT si precio por debajo de EMA y RSI > 30
+    Tendencia simple combinando EMA corta + RSI (más agresivo):
+    - LONG si precio por encima de EMA y RSI < 75
+    - SHORT si precio por debajo de EMA y RSI > 25
     - Si está neutro, mantiene dirección actual
     """
     if len(precios) < 10:
         return st.session_state.get('direccion', 'LONG')
     ema = np.mean(precios[-10:])
     precio = precios[-1]
-    if precio >= ema and rsi <= 70:
+    if precio >= ema and rsi <= 75:
         return "LONG"
-    elif precio < ema and rsi >= 30:
+    elif precio < ema and rsi >= 25:
         return "SHORT"
     else:
         return st.session_state.get('direccion', 'LONG')
@@ -158,15 +158,23 @@ else:
         
         st.divider()
         st.subheader("⚙️ Configuración de riesgo/agresividad")
-        lev = st.slider("Apalancamiento", 1, 50, 20)
-        niveles = st.number_input("Cantidad de Niveles", 1, 50, 10)
-        distancia = st.slider("Distancia Malla (%)", 0.01, 1.0, 0.2, format="%.3f") / 100
+        lev = st.slider("Apalancamiento", 1, 50, 22)
+        niveles = st.number_input("Cantidad de Niveles", 1, 50, 7)
+        distancia = st.slider("Distancia Malla (%)", 0.01, 1.0, 0.05, format="%.3f") / 100
         inversion = st.number_input("Inversión Total (USDT)", 10.0, 10000.0, 10.0)
 
+        # TP corto por nivel para modo agresivo
         tp_sensible = st.slider(
             "Profit Objetivo por Nivel (%)",
-            0.01, 1.50, 0.08, format="%.2f"
+            0.01, 1.50, 0.03, format="%.3f"
         ) / 100
+
+        st.divider()
+        st.subheader("🎯 RSI (auto / manual)")
+        rsi_manual = st.slider(
+            "RSI Manual (0 = automático)",
+            0, 100, 0
+        )
 
         st.divider()
         st.subheader("⚡ Respuesta a saltos de precio")
@@ -174,8 +182,8 @@ else:
             "Salto de precio para modo rápido (%)",
             0.1, 2.0, 0.5, format="%.2f"
         ) / 100
-        sleep_normal = st.slider("Delay normal (seg)", 0.3, 3.0, 0.8)
-        sleep_rapido = st.slider("Delay rápido (seg)", 0.05, 0.5, 0.15)
+        sleep_normal = st.slider("Delay normal (seg)", 0.2, 3.0, 0.7)
+        sleep_rapido = st.slider("Delay rápido (seg)", 0.03, 0.5, 0.12)
 
         st.divider()
         debug_on = st.checkbox("👀 Ver debug interno por nivel")
@@ -218,14 +226,18 @@ else:
             if len(st.session_state.precios_hist) > 200:
                 st.session_state.precios_hist.pop(0)
             
-            # RSI e historial RSI
-            rsi_val = calcular_rsi(st.session_state.precios_hist)
-            st.session_state.rsi_hist.append(rsi_val)
+            # RSI real
+            rsi_real = calcular_rsi(st.session_state.precios_hist)
+            # RSI efectivamente usado (auto / manual)
+            rsi_use = rsi_manual if rsi_manual != 0 else rsi_real
+
+            # Historial RSI (usado)
+            st.session_state.rsi_hist.append(rsi_use)
             if len(st.session_state.rsi_hist) > 200:
                 st.session_state.rsi_hist.pop(0)
 
-            # Tendencia calculada
-            tendencia_calc = obtener_tendencia(st.session_state.precios_hist, rsi_val)
+            # Tendencia calculada (más agresiva)
+            tendencia_calc = obtener_tendencia(st.session_state.precios_hist, rsi_use)
 
             # --- AUTOAJUSTE DE DIRECCIÓN / BLOQUEO ---
             if not st.session_state.posiciones:
@@ -234,9 +246,9 @@ else:
                 st.session_state.bloquear_nuevas_ordenes = False
             else:
                 # si hay posiciones y la tendencia va fuerte en contra, bloquear nuevas órdenes
-                if st.session_state.direccion == "LONG" and tendencia_calc == "SHORT" and rsi_val < 45:
+                if st.session_state.direccion == "LONG" and tendencia_calc == "SHORT" and rsi_use < 45:
                     st.session_state.bloquear_nuevas_ordenes = True
-                elif st.session_state.direccion == "SHORT" and tendencia_calc == "LONG" and rsi_val > 55:
+                elif st.session_state.direccion == "SHORT" and tendencia_calc == "LONG" and rsi_use > 55:
                     st.session_state.bloquear_nuevas_ordenes = True
 
             # Armado de malla inicial si no hay malla ni posiciones y NO está bloqueado
@@ -317,7 +329,8 @@ else:
                         f"Precio: {precio_act:.4f} | "
                         f"Retorno: {retorno*100:.4f}% | "
                         f"PnL: {pnl_nivel:.4f} | TP_hit: {tp_hit} | "
-                        f"Tendencia_calc: {tendencia_calc} | Bloqueado: {st.session_state.bloquear_nuevas_ordenes}"
+                        f"Tendencia_calc: {tendencia_calc} | Bloqueado: {st.session_state.bloquear_nuevas_ordenes} | "
+                        f"RSI_real: {rsi_real:.1f} | RSI_usado: {rsi_use:.1f}"
                     )
 
                 # Cierra SOLO si hay GANANCIA
@@ -339,7 +352,7 @@ else:
                         'Ganancia': round(pnl_nivel, 4)
                     })
 
-                    # Rearmo ese nivel como PENDIENTE
+                    # Rearmo ese nivel como PENDIENTE inmediatamente (scalper agresivo)
                     for o in st.session_state.ordenes_malla:
                         if o['id'] == pos['id_orden']:
                             o['estado'] = 'PENDIENTE'
@@ -354,7 +367,8 @@ else:
             c1.metric(f"Precio ({st.session_state.direccion})", f"${precio_act:,.4f}")
             c2.metric("Wallet Balance", f"${st.session_state.saldo_demo:,.2f}")
             pnl_display = st.session_state.ganancia_total
-            c3.metric("PNL Total", f"${pnl_display:,.2f}", delta=f"RSI: {rsi_val:.1f}")
+            # mostramos el RSI que se usa realmente en la lógica
+            c3.metric("PNL Total", f"${pnl_display:,.2f}", delta=f"RSI uso: {rsi_use:.1f}")
 
             # --- GRÁFICO CON ENTRADAS, TP, MALLA Y RSI ---
             fig = go.Figure()
@@ -411,11 +425,11 @@ else:
                         opacity=0.3,
                     )
 
-            # RSI en eje secundario
+            # RSI en eje secundario (usando RSI que se utilizó en la lógica)
             if st.session_state.rsi_hist:
                 fig.add_trace(go.Scatter(
                     y=st.session_state.rsi_hist,
-                    name="RSI",
+                    name="RSI (uso)",
                     line=dict(color='magenta', width=2, dash='dash'),
                     yaxis="y2"
                 ))
