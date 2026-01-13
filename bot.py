@@ -345,3 +345,51 @@ else:
                 x_idx = [len(st.session_state.precios_hist) - 1] * len(st.session_state.posiciones)
                 fig.add_trace(go.Scatter(
                     x=x_idx,
+                    y=[p['entrada'] for p in st.session_state.posiciones],
+                    mode='markers',
+                    name='Entradas abiertas',
+                    marker=dict(color='cyan', size=10, symbol='triangle-up')
+                ))
+                # TPs de esas posiciones
+                fig.add_trace(go.Scatter(
+                    x=x_idx,
+                    y=[p['tp_precio'] for p in st.session_state.posiciones],
+                    mode='markers',
+                    name='TP por nivel',
+                    marker=dict(color='lime', size=9, symbol='x')
+                ))
+
+            # niveles de malla (pendientes y ejecutados) como líneas horizontales suaves
+            if st.session_state.ordenes_malla:
+                x0 = 0
+                x1 = len(st.session_state.precios_hist) - 1
+                for o in st.session_state.ordenes_malla:
+                    color = 'gray' if o['estado'] == 'PENDIENTE' else '#F39C12'
+                    fig.add_hline(
+                        y=o['precio'],
+                        line=dict(color=color, width=1, dash='dot'),
+                        opacity=0.4,
+                    )
+
+            fig.update_layout(
+                height=400,
+                template="plotly_dark",
+                margin=dict(l=0, r=0, b=0, t=0),
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
+            st.subheader("📋 Malla de Operación")
+            st.dataframe(st.session_state.ordenes_malla, use_container_width=True)
+
+            st.subheader("📈 Historial de PNL por nivel")
+            if st.session_state.historial_pnl:
+                st.dataframe(st.session_state.historial_pnl, use_container_width=True)
+
+            time.sleep(delay)
+            st.rerun()
+
+        except Exception as e:
+            st.error(f"Error: {e}")
+            time.sleep(3)
+            st.rerun()
