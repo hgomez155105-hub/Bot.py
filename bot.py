@@ -5,9 +5,27 @@ import time
 import plotly.graph_objects as go
 import numpy as np
 from datetime import datetime
-import ccxt  # Librería para conectar con Binance
+import ccxt
 
-# --- CONFIGURACIÓN ---
+# --- CONFIGURACIÓN DE BASE DE DATOS (GOOGLE SHEETS) ---
+# URL de tu CSV de Google Sheets para validar usuarios
+SHEET_URL = "https://docs.google.com/spreadsheets/d/1nYyINRPF-cIiAMsKInTxaO6wdptsitVfZnFq-o1Wo1Y/export?format=csv"
+
+def verificar_acceso(u, p):
+    try:
+        # Leemos la base de datos de Google
+        df = pd.read_csv(SHEET_URL)
+        # Limpiamos nombres de columnas por si tienen espacios
+        df.columns = df.columns.str.strip().str.lower()
+        # Buscamos coincidencia de usuario y clave
+        match = df[(df['usuario'].astype(str).str.strip() == str(u).strip()) & 
+                   (df['clave'].astype(str).str.strip() == str(p).strip())]
+        return not match.empty
+    except Exception as e:
+        st.error(f"Error de conexión con la base de datos: {e}")
+        return False
+
+# --- CONFIGURACIÓN PÁGINA ---
 st.set_page_config(page_title="H y G Inovaciones", layout="wide", page_icon="👁️")
 
 # --- ESTILO VISUAL ---
@@ -22,14 +40,12 @@ st.markdown("""
 
 LOGO_URL = "https://raw.githubusercontent.com/hgomez155105-hub/Bot.py/main/1000266017.png"
 
-# --- FUNCIONES TÉCNICAS ---
+# --- FUNCIONES TÉCNICAS (TUYAS, SIN TOCAR) ---
 def conectar_binance(api_key, secret_key):
     try:
         exchange = ccxt.binance({
-            'apiKey': api_key,
-            'secret': secret_key,
-            'enableRateLimit': True,
-            'options': {'defaultType': 'future'} # Cambiar a 'spot' si no usas futuros
+            'apiKey': api_key, 'secret': secret_key,
+            'enableRateLimit': True, 'options': {'defaultType': 'future'}
         })
         return exchange
     except: return None
@@ -57,7 +73,7 @@ def obtener_tendencia(precios):
     ema = np.mean(precios[-10:])
     return "LONG" if precios[-1] >= ema else "SHORT"
 
-# --- LOGIN ---
+# --- LOGIN REPARADO ---
 if 'autenticado' not in st.session_state: st.session_state.autenticado = False
 
 if not st.session_state.autenticado:
@@ -65,10 +81,17 @@ if not st.session_state.autenticado:
     with col2:
         st.image(LOGO_URL, width=200)
         st.markdown("<h2 style='text-align: center;'>H y G Inovaciones</h2>", unsafe_allow_html=True)
-        u = st.text_input("Usuario"); p = st.text_input("Contraseña", type="password")
+        u_input = st.text_input("Usuario")
+        p_input = st.text_input("Contraseña", type="password")
         if st.button("ACCEDER AL SISTEMA", use_container_width=True):
-            st.session_state.autenticado = True; st.session_state.user_name = u; st.rerun()
+            if verificar_acceso(u_input, p_input):
+                st.session_state.autenticado = True
+                st.session_state.user_name = u_input
+                st.rerun()
+            else:
+                st.error("Credenciales inválidas. Acceso denegado.")
 else:
+    # --- TODO TU MOTOR ORIGINAL DESDE AQUÍ ---
     if 'saldo_demo' not in st.session_state:
         st.session_state.update({'saldo_demo': 1000.0, 'ganancia_total': 0.0, 'posiciones': [], 
                                  'precios_hist': [], 'ordenes_malla': [], 'ultimo_par': "", 
@@ -103,11 +126,10 @@ else:
         if st.button("🚨 BOTÓN DE PÁNICO", use_container_width=True):
             st.session_state.update({'posiciones': [], 'ordenes_malla': [], 'max_pnl_alcanzado': 0.0}); st.rerun()
 
-    # --- LÓGICA DE EJECUCIÓN ---
+    # --- LÓGICA DE EJECUCIÓN (TU MOTOR) ---
     bot_on = st.toggle("🚀 ACTIVAR ALGORITMO PREDADOR")
     if bot_on:
         try:
-            # Conexión Real si aplica
             exchange = None
             if entorno == "🟡 MODO REAL" and api_k and api_s:
                 exchange = conectar_binance(api_k, api_s)
@@ -120,7 +142,6 @@ else:
             rsi_val = calcular_rsi(st.session_state.precios_hist)
             tendencia = obtener_tendencia(st.session_state.precios_hist)
 
-            # 1. ENTRADA
             if not st.session_state.ordenes_malla and not st.session_state.posiciones:
                 if (tendencia == "LONG" and rsi_val <= 50) or (tendencia == "SHORT" and rsi_val >= 50):
                     st.session_state.direccion = tendencia
@@ -132,21 +153,18 @@ else:
                             'monto': round(monto_nivel, 2), 'estado': 'PENDIENTE'
                         })
 
-            # 2. EJECUCIÓN (REAL O DEMO)
             for o in st.session_state.ordenes_malla:
                 if o['estado'] == 'PENDIENTE':
                     hit = (st.session_state.direccion == "LONG" and precio_act <= o['precio']) or \
                           (st.session_state.direccion == "SHORT" and precio_act >= o['precio'])
                     if hit:
-                        if exchange: # Si es REAL
+                        if exchange:
                             side = 'buy' if st.session_state.direccion == "LONG" else 'sell'
                             exchange.create_market_order(par, side, o['monto'] / precio_act)
-                        
                         st.session_state.saldo_demo -= o['monto']
                         o['estado'] = 'EJECUTADA'
                         st.session_state.posiciones.append({'entrada': precio_act, 'monto': o['monto']})
 
-            # 3. CIERRE CON TRAILING PROFIT
             if st.session_state.posiciones:
                 t_inv = sum(p['monto'] for p in st.session_state.posiciones)
                 p_prom = sum(p['entrada'] for p in st.session_state.posiciones) / len(st.session_state.posiciones)
@@ -156,18 +174,16 @@ else:
                     if pnl_actual > st.session_state.max_pnl_alcanzado:
                         st.session_state.max_pnl_alcanzado = pnl_actual
                     
-                    if pnl_actual < (st.session_state.max_pnl_alcanzado * 0.98): # Cierre al retroceder 2%
-                        if exchange: # Cierre en REAL
+                    if pnl_actual < (st.session_state.max_pnl_alcanzado * 0.98):
+                        if exchange:
                             side = 'sell' if st.session_state.direccion == "LONG" else 'buy'
                             exchange.create_market_order(par, side, t_inv / precio_act)
-                        
                         st.session_state.historial_pnl.append({'Fecha': datetime.now().strftime("%H:%M:%S"), 'Tipo': st.session_state.direccion, 'Ganancia': round(pnl_actual, 4)})
                         st.session_state.saldo_demo += (t_inv + pnl_actual)
                         st.session_state.ganancia_total += pnl_actual
                         st.session_state.update({'posiciones': [], 'ordenes_malla': [], 'max_pnl_alcanzado': 0.0})
                         st.rerun()
 
-            # --- UI ---
             c1, c2, c3 = st.columns(3)
             c1.metric(f"Precio ({st.session_state.direccion})", f"${precio_act:,.4f}")
             c2.metric("Wallet Balance", f"${st.session_state.saldo_demo:,.2f}")
@@ -185,4 +201,3 @@ else:
         except Exception as e:
             st.error(f"Error: {e}")
             time.sleep(5); st.rerun()
-            
