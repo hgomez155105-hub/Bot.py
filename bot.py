@@ -181,6 +181,66 @@ else:
     </div>
     """, unsafe_allow_html=True)
 # ============================================================
+# LOGIN + HEADER + BIENVENIDA + CIERRE DE SESIÓN
+# ============================================================
+
+if "autenticado" not in st.session_state:
+    st.session_state.autenticado = False
+
+if not st.session_state.autenticado:
+    st.set_page_config(page_title="H y G Innovaciones – Admin", layout="centered")
+    st.image(LOGO_URL, width=200)
+    st.markdown("<h2 style='text-align: center;'>H y G Inovaciones</h2>", unsafe_allow_html=True)
+
+    u = st.text_input("Usuario")
+    p = st.text_input("Contraseña", type="password")
+
+    if st.button("ACCEDER AL SISTEMA", use_container_width=True):
+        if verificar_acceso(u, p):
+            st.session_state.autenticado = True
+            st.session_state.user_name = u
+            st.rerun()
+        else:
+            st.error("Acceso denegado. Verifique su base de datos.")
+
+    st.stop()
+
+# HEADER + BIENVENIDA
+c_h1, c_h2 = st.columns([4, 1])
+c_h1.markdown(
+    f"## 👁️ H y G Inovaciones - <span class='user-tag'>👤 {st.session_state.get('user_name', 'Invitado')}</span>",
+    unsafe_allow_html=True
+)
+c_h2.image(LOGO_URL, width=70)
+
+nombre_usuario = st.session_state.get("user_name", "Invitado")
+
+st.markdown(f"""
+<div style="
+    background-color:#1E2329;
+    padding:18px;
+    border-radius:12px;
+    border:1px solid #F0B90B;
+    margin-top:10px;
+">
+    <h3 style="color:white; margin:0;">
+        👋 Bienvenido, <span style="color:#F0B90B;">{nombre_usuario}</span>
+    </h3>
+    <p style="color:#CCCCCC; margin-top:6px; font-size:15px;">
+        El algoritmo está listo para operar en modo táctico.<br>
+        Activá Hedging, Sniper o Tormenta desde la barra lateral según tu estrategia.
+    </p>
+</div>
+""", unsafe_allow_html=True)
+
+# BOTÓN DE CIERRE DE SESIÓN EN SIDEBAR
+with st.sidebar:
+    st.divider()
+    if st.button("🔒 Cerrar sesión", use_container_width=True):
+        st.session_state.autenticado = False
+        st.session_state.user_name = ""
+        st.rerun() 
+# ============================================================
 # ESTADO INICIAL
 # ============================================================
 
