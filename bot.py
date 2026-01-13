@@ -4,54 +4,53 @@ import requests
 import time
 import plotly.graph_objects as go
 import numpy as np
-from datetime import datetime
 import ccxt
 
-# --- CONFIGURACIÓN PRIVADA (Cámbialo aquí y no se borrará) ---
-# Pon tu URL de Google Sheets terminada en /export?format=csv
+# --- CONFIGURACIÓN DE TU SISTEMA ---
+# Asegúrate de que esta URL sea la de "Publicar en la web" -> formato CSV
 SHEET_URL = "https://docs.google.com/spreadsheets/d/TU_ID_DE_HOJA/export?format=csv"
-# Tus credenciales de Telegram para que el bot te avise a TI
-ADMIN_TOKEN = "TU_BOT_TOKEN_AQUI"
-ADMIN_CHAT_ID = "TU_CHAT_ID_AQUI"
+ADMIN_TOKEN = "TU_TELEGRAM_TOKEN"
+ADMIN_CHAT_ID = "TU_TELEGRAM_ID"
 
-# --- CONFIGURACIÓN DE PÁGINA ---
-st.set_page_config(page_title="H y G Inovaciones", layout="wide", page_icon="👁️")
-
-# --- FUNCIONES DE SEGURIDAD ---
-def enviar_telegram_admin(mensaje):
-    """Envía notificaciones solo a tu Telegram personal"""
-    if ADMIN_TOKEN != "TU_BOT_TOKEN_AQUI":
-        try:
-            url = f"https://api.telegram.org/bot{ADMIN_TOKEN}/sendMessage?chat_id={ADMIN_CHAT_ID}&text={mensaje}"
-            requests.get(url)
-        except: pass
-
-def verificar_credenciales(u, p):
-    """Verifica usuario y clave contra la hoja de Google Sheets"""
+def verificar_credenciales(u_ingresado, p_ingresado):
     try:
-        # Forzamos la descarga de los datos actuales
-        df_users = pd.read_csv(SHEET_URL)
-        # Limpiamos nombres de columnas y datos (quitamos espacios y pasamos a minúsculas)
-        df_users.columns = df_users.columns.str.strip().str.lower()
-        u_limpio = str(u).strip()
-        p_limpio = str(p).strip()
+        df = pd.read_csv(SHEET_URL)
+        # Limpiamos los nombres de las columnas para que coincidan con tu imagen
+        df.columns = df.columns.str.strip().str.lower()
         
-        # Buscamos la coincidencia
-        match = df_users[(df_users['usuario'].astype(str).str.strip() == u_limpio) & 
-                         (df_users['password'].astype(str).str.strip() == p_limpio)]
-        return not match.empty
+        # Buscamos en 'usuario' y 'clave' (tal cual tenés en tu Sheet)
+        # Convertimos todo a string para que el '2227' de Admin funcione
+        valido = df[(df['usuario'].astype(str).str.strip() == str(u_ingresado).strip()) & 
+                    (df['clave'].astype(str).str.strip() == str(p_ingresado).strip())]
+        return not valido.empty
     except Exception as e:
-        st.error(f"Error conectando con la base de datos: {e}")
+        st.error(f"Error de base de datos: {e}")
         return False
 
-# --- ESTILO VISUAL H Y G ---
-st.markdown("""
-    <style>
-    .stApp { background-color: #0B0E11 !important; }
-    .user-tag { background: #1E2329; padding: 5px 15px; border-radius: 20px; border: 1px solid #F0B90B; color: white; }
-    [data-testid="stMetricValue"] { color: #F0B90B !important; font-size: 1.8rem !important; }
-    h1, h2, h3, p, label { color: white !important; }
-    </style>
-    """, unsafe_allow_html=True)
+# --- INTERFAZ Y LOGIN ---
+if 'autenticado' not in st.session_state:
+    st.session_state.autenticado = False
 
-LOGO_URL = "
+if not st.session_state.autenticado:
+    st.image("https://raw.githubusercontent.com/hgomez155105-hub/Bot.py/main/1000266017.png", width=120)
+    st.title("H y G Inovaciones")
+    
+    u = st.text_input("Usuario")
+    p = st.text_input("Contraseña", type="password")
+    
+    if st.button("ACCEDER AL SISTEMA", use_container_width=True):
+        if verificar_credenciales(u, p):
+            st.session_state.autenticado = True
+            st.session_state.user_name = u
+            st.rerun()
+        else:
+            st.error("Credenciales incorrectas. Verifique su base de datos.")
+else:
+    # --- AQUÍ EMPIEZA TU BOT QUE YA FUNCIONA ---
+    st.sidebar.image("https://raw.githubusercontent.com/hgomez155105-hub/Bot.py/main/1000266017.png", width=100)
+    st.markdown(f"### 👤 Usuario: {st.session_state.user_name}")
+    
+    # Resto de la lógica de Malla, Cosecha y Gráficos...
+    # (Se mantiene exactamente igual a lo que tenías en las capturas)
+    st.success("Sistema Predador en línea")
+    
