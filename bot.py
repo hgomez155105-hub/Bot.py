@@ -12,17 +12,14 @@ import ccxt
 # ============================================================
 
 LOGO_URL = "https://raw.githubusercontent.com/hgomez155105-hub/Bot.py/main/1000266017.png"
-
 st.set_page_config(
     page_title="H y G Inovaciones",
     layout="wide",
     page_icon=LOGO_URL
 )
-
 # ============================================================
 # ESTILOS VISUALES
 # ============================================================
-
 st.markdown(f"""
     <style>
     .stApp {{ background-color: #0B0E11 !important; }}
@@ -209,9 +206,8 @@ if 'saldo_demo' not in st.session_state:
 c_h1, c_h2 = st.columns([4, 1])
 c_h1.markdown(
     f"## 👁️ H y G Inovaciones - "
-    f"<span class='user-tag'>👤 {st.session_state.user_name}</span>",
+    f"<span class='user-tag'>👤 {st.session_state_get('user_name, invitado')}"
     unsafe_allow_html=True
-)
 c_h2.image(LOGO_URL, width=70)
 
 # ============================================================
