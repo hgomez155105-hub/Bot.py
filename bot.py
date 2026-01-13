@@ -75,11 +75,23 @@ def calcular_rsi(precios, periodo=14):
     rs = avg_gain / (avg_loss if avg_loss != 0 else 0.001)
     return 100 - (100 / (1 + rs))
 
-def obtener_tendencia(precios):
+def obtener_tendencia(precios, rsi):
+    """
+    Tendencia simple combinando precio y RSI:
+    - LONG si precio por encima de EMA y RSI < 70
+    - SHORT si precio por debajo de EMA y RSI > 30
+    """
     if len(precios) < 10:
         return "LONG"
     ema = np.mean(precios[-10:])
-    return "LONG" if precios[-1] >= ema else "SHORT"
+    precio = precios[-1]
+    if precio >= ema and rsi <= 70:
+        return "LONG"
+    elif precio < ema and rsi >= 30:
+        return "SHORT"
+    else:
+        # si está medio neutro, mantenemos la última dirección
+        return st.session_state.get('direccion', 'LONG')
 
 # --- LOGIN ---
 if 'autenticado' not in st.session_state:
@@ -148,10 +160,9 @@ else:
         distancia = st.slider("Distancia Malla (%)", 0.01, 1.0, 0.2, format="%.3f") / 100
         inversion = st.number_input("Inversión Total (USDT)", 10.0, 10000.0, 10.0)
 
-        # <<< CAMBIO: nos aseguramos que el valor sea porcentaje / 100
         tp_sensible = st.slider(
             "Profit Objetivo por Nivel (%)",
-            0.01, 1.50, 0.20, format="%.2f"
+            0.01, 1.50, 0.08, format="%.2f"
         ) / 100
 
         st.divider()
@@ -160,11 +171,11 @@ else:
             "Salto de precio para modo rápido (%)",
             0.1, 2.0, 0.5, format="%.2f"
         ) / 100
-        sleep_normal = st.slider("Delay normal (seg)", 0.5, 3.0, 1.0)
+        sleep_normal = st.slider("Delay normal (seg)", 0.3, 3.0, 0.8)
         sleep_rapido = st.slider("Delay rápido (seg)", 0.05, 0.5, 0.15)
 
         st.divider()
-        debug_on = st.checkbox("👀 Ver debug interno por nivel")  # <<< CAMBIO
+        debug_on = st.checkbox("👀 Ver debug interno por nivel")
 
         if st.button("🚨 BOTÓN DE PÁNICO", use_container_width=True):
             st.session_state.update({
@@ -196,36 +207,35 @@ else:
             else:
                 cambio_pct = 0.0
 
-            if cambio_pct >= salto_rapido:
-                delay = sleep_rapido
-            else:
-                delay = sleep_normal
+            delay = sleep_rapido if cambio_pct >= salto_rapido else sleep_normal
 
             # Historial de precios
             st.session_state.precios_hist.append(precio_act)
-            if len(st.session_state.precios_hist) > 50:
+            if len(st.session_state.precios_hist) > 200:
                 st.session_state.precios_hist.pop(0)
             
             rsi_val = calcular_rsi(st.session_state.precios_hist)
-            tendencia = obtener_tendencia(st.session_state.precios_hist)
+            tendencia_calc = obtener_tendencia(st.session_state.precios_hist, rsi_val)
 
-            # Armado de malla inicial (usa RSI/tendencia solo para dirección)
+            # Autoajuste de dirección solo cuando NO hay posiciones abiertas
+            if not st.session_state.posiciones:
+                st.session_state.direccion = tendencia_calc
+
+            # Armado de malla inicial si no hay malla ni posiciones
             if not st.session_state.ordenes_malla and not st.session_state.posiciones:
-                if (tendencia == "LONG" and rsi_val <= 60) or (tendencia == "SHORT" and rsi_val >= 40):
-                    st.session_state.direccion = tendencia
-                    monto_nivel = inversion / niveles
-                    st.session_state.ordenes_malla = []
-                    for i in range(niveles):
-                        if st.session_state.direccion == "LONG":
-                            factor = 1 - (i * distancia)
-                        else:
-                            factor = 1 + (i * distancia)
-                        st.session_state.ordenes_malla.append({
-                            'id': i + 1,
-                            'precio': round(precio_act * factor, 4),
-                            'monto': round(monto_nivel, 2),
-                            'estado': 'PENDIENTE'
-                        })
+                monto_nivel = inversion / niveles
+                st.session_state.ordenes_malla = []
+                for i in range(niveles):
+                    if st.session_state.direccion == "LONG":
+                        factor = 1 - (i * distancia)
+                    else:
+                        factor = 1 + (i * distancia)
+                    st.session_state.ordenes_malla.append({
+                        'id': i + 1,
+                        'precio': round(precio_act * factor, 4),
+                        'monto': round(monto_nivel, 2),
+                        'estado': 'PENDIENTE'
+                    })
 
             # Ejecución de órdenes de la malla (abre posición en ese nivel)
             for o in st.session_state.ordenes_malla:
@@ -245,7 +255,6 @@ else:
                         st.session_state.saldo_demo -= o['monto']
                         o['estado'] = 'EJECUTADA'
 
-                        # <<< CAMBIO: usamos el PRECIO REAL de entrada para TP
                         entrada_real = precio_act
                         if st.session_state.direccion == "LONG":
                             tp_price = entrada_real * (1 + tp_sensible)
@@ -259,7 +268,7 @@ else:
                             'tp_precio': tp_price
                         })
 
-            # Gestión de cada posición por nivel (scalp individual)
+            # Gestión de cada posición por nivel (scalp individual SIEMPRE EN GANANCIA)
             nuevas_posiciones = []
             for pos in st.session_state.posiciones:
                 entrada = pos['entrada']
@@ -275,17 +284,17 @@ else:
 
                 pnl_nivel = retorno * monto * lev
 
-                # <<< CAMBIO: debug opcional para ver por qué no cierra
                 if debug_on:
                     st.write(
                         f"Nivel {pos['id_orden']} | "
+                        f"Dir: {st.session_state.direccion} | "
                         f"Entrada: {entrada:.4f} | TP: {tp_price:.4f} | "
-                        f"Precio actual: {precio_act:.4f} | "
-                        f"retorno: {retorno*100:.4f}% | "
-                        f"PnL nivel: {pnl_nivel:.4f} | TP_hit: {tp_hit}"
+                        f"Precio: {precio_act:.4f} | "
+                        f"Retorno: {retorno*100:.4f}% | "
+                        f"PnL: {pnl_nivel:.4f} | TP_hit: {tp_hit}"
                     )
 
-                # Condición: SIEMPRE cerrar solo si hay GANANCIA
+                # Cierre SOLO si hay ganancia
                 if tp_hit and pnl_nivel > 0:
                     if exchange:
                         side = 'sell' if st.session_state.direccion == "LONG" else 'buy'
@@ -304,7 +313,7 @@ else:
                         'Ganancia': round(pnl_nivel, 4)
                     })
 
-                    # Rearmo ese nivel como PENDIENTE para seguir scalpeando
+                    # Rearmo ese nivel como PENDIENTE
                     for o in st.session_state.ordenes_malla:
                         if o['id'] == pos['id_orden']:
                             o['estado'] = 'PENDIENTE'
@@ -314,37 +323,25 @@ else:
 
             st.session_state.posiciones = nuevas_posiciones
 
-            # --- MÉTRICAS Y GRÁFICOS ---
+            # --- MÉTRICAS ---
             c1, c2, c3 = st.columns(3)
             c1.metric(f"Precio ({st.session_state.direccion})", f"${precio_act:,.4f}")
             c2.metric("Wallet Balance", f"${st.session_state.saldo_demo:,.2f}")
             pnl_display = st.session_state.ganancia_total
             c3.metric("PNL Total", f"${pnl_display:,.2f}", delta=f"RSI: {rsi_val:.1f}")
 
+            # --- GRÁFICO CON ENTRADAS, TP Y MALLA ---
             fig = go.Figure()
+
+            # serie de precio
             fig.add_trace(go.Scatter(
                 y=st.session_state.precios_hist,
                 name="Precio",
                 line=dict(color='#F0B90B', width=3)
             ))
-            fig.update_layout(
-                height=400,
-                template="plotly_dark",
-                margin=dict(l=0, r=0, b=0, t=0)
-            )
-            st.plotly_chart(fig, use_container_width=True)
 
-            st.subheader("📋 Malla de Operación")
-            st.dataframe(st.session_state.ordenes_malla, use_container_width=True)
-
-            st.subheader("📈 Historial de PNL por nivel")
-            if st.session_state.historial_pnl:
-                st.dataframe(st.session_state.historial_pnl, use_container_width=True)
-
-            time.sleep(delay)
-            st.rerun()
-
-        except Exception as e:
-            st.error(f"Error: {e}")
-            time.sleep(3)
-            st.rerun()
+            # puntos de entrada de posiciones abiertas
+            if st.session_state.posiciones:
+                x_idx = [len(st.session_state.precios_hist) - 1] * len(st.session_state.posiciones)
+                fig.add_trace(go.Scatter(
+                    x=x_idx,
