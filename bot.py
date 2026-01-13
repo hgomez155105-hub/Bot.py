@@ -15,8 +15,8 @@ def verificar_acceso(u, p):
         df = pd.read_csv(SHEET_URL)
         df.columns = df.columns.str.strip().str.lower()
         match = df[
-            (df['usuario'].astype(str).str.strip() == str(u).strip()) &
-            (df['clave'].astype(str).str.strip() == str(p).strip())
+            (df['usuario"].astype(str).str.strip() == str(u).strip()) &
+            (df['clave"].astype(str).str.strip() == str(p).strip())
         ]
         return not match.empty
     except:
@@ -117,14 +117,15 @@ else:
         st.session_state.update({
             'saldo_demo': 1000.0,
             'ganancia_total': 0.0,
-            'posiciones': [],          # cada posición = un nivel ejecutado (puede ser LONG o SHORT)
+            'posiciones': [],          # cada posición = un nivel ejecutado (LONG o SHORT)
             'precios_hist': [],
-            'ordenes_malla': [],       # niveles de la grilla (pueden ser LONG o SHORT)
+            'ordenes_malla': [],       # niveles de la grilla (LONG o SHORT)
             'ultimo_par': "",
             'historial_pnl': [],
-            'direccion': 'LONG',       # dirección por defecto para nuevas órdenes
+            'direccion': 'LONG',       # dirección preferida para nuevas órdenes
             'ultimo_precio': None,
-            'rsi_hist': []
+            'rsi_hist': [],
+            'modo_tormenta_activo': False
         })
 
     # --- HEADER ---
@@ -158,11 +159,10 @@ else:
         st.divider()
         st.subheader("⚙️ Configuración de riesgo/agresividad")
         lev = st.slider("Apalancamiento", 1, 50, 22)
-        niveles = st.number_input("Cantidad de Niveles", 1, 50, 7)
+        niveles = st.number_input("Cantidad de Niveles por malla", 1, 50, 7)
         distancia = st.slider("Distancia Malla (%)", 0.01, 1.0, 0.05, format="%.3f") / 100
-        inversion = st.number_input("Inversión Total (USDT)", 10.0, 10000.0, 10.0)
+        inversion = st.number_input("Inversión Total por malla (USDT)", 10.0, 10000.0, 10.0)
 
-        # TP corto por nivel para modo agresivo
         tp_sensible = st.slider(
             "Profit Objetivo por Nivel (%)",
             0.01, 1.50, 0.03, format="%.3f"
@@ -176,6 +176,14 @@ else:
         )
 
         st.divider()
+        st.subheader("🧠 Modos tácticos")
+        hedging_on = st.checkbox("🌀 Hedging dinámico (LONG & SHORT simultáneos)", value=True)
+        sniper_on = st.checkbox("🎯 Modo Sniper (entradas en micro-picos)", value=True)
+        tormenta_on = st.checkbox("🌩️ Modo Tormenta (ráfagas en alta volatilidad)", value=True)
+        cierre_bloque = st.checkbox("🧱 Cierre por bloque si PnL total > 0")
+        debug_on = st.checkbox("👀 Ver debug interno por nivel")
+
+        st.divider()
         st.subheader("⚡ Respuesta a saltos de precio")
         salto_rapido = st.slider(
             "Salto de precio para modo rápido (%)",
@@ -184,14 +192,11 @@ else:
         sleep_normal = st.slider("Delay normal (seg)", 0.2, 3.0, 0.7)
         sleep_rapido = st.slider("Delay rápido (seg)", 0.03, 0.5, 0.12)
 
-        st.divider()
-        cierre_bloque = st.checkbox("🧱 Cierre por bloque si PnL total > 0")
-        debug_on = st.checkbox("👀 Ver debug interno por nivel")
-
         if st.button("🚨 BOTÓN DE PÁNICO", use_container_width=True):
             st.session_state.update({
                 'posiciones': [],
-                'ordenes_malla': []
+                'ordenes_malla': [],
+                'modo_tormenta_activo': False
             })
             st.rerun()
 
@@ -209,7 +214,7 @@ else:
             ).json()
             precio_act = float(res['USD'])
 
-            # Cálculo cambio de precio para definir velocidad de refresco
+            # Cálculo cambio de precio para definir velocidad de refresco (y detectar tormenta)
             precio_anterior = st.session_state.ultimo_precio
             st.session_state.ultimo_precio = precio_act
 
@@ -218,87 +223,127 @@ else:
             else:
                 cambio_pct = 0.0
 
-            delay = sleep_rapido if cambio_pct >= salto_rapido else sleep_normal
+            # Modo tormenta: si hay salto fuerte, activamos ráfaga
+            if tormenta_on and cambio_pct >= salto_rapido:
+                st.session_state.modo_tormenta_activo = True
+                delay = sleep_rapido
+            else:
+                st.session_state.modo_tormenta_activo = False
+                delay = sleep_normal
 
             # Historial de precios
             st.session_state.precios_hist.append(precio_act)
             if len(st.session_state.precios_hist) > 300:
                 st.session_state.precios_hist.pop(0)
             
-            # RSI real
+            # RSI real y usado
             rsi_real = calcular_rsi(st.session_state.precios_hist)
-            # RSI efectivamente usado (auto / manual)
             rsi_use = rsi_manual if rsi_manual != 0 else rsi_real
 
-            # Historial RSI (usado)
             st.session_state.rsi_hist.append(rsi_use)
             if len(st.session_state.rsi_hist) > 300:
                 st.session_state.rsi_hist.pop(0)
 
-            # Tendencia calculada (más agresiva)
+            # Tendencia calculada
             tendencia_calc = obtener_tendencia(st.session_state.precios_hist, rsi_use)
-
-            # --- DIRECCIÓN PARA NUEVAS ÓRDENES ---
-            # Siempre podemos girar la dirección "preferida" aunque haya posiciones abiertas.
-            # Las posiciones almacenan su propia dirección, así que manejamos mezcla LONG/SHORT.
             st.session_state.direccion = tendencia_calc
 
-            # Armado de malla para la dirección actual si no hay malla de esa dirección
-            # y no estamos sobrecargados de órdenes de ese lado
+            # --- ARMADO / ACTUALIZACIÓN DE MALLAS ---
+            # Cada malla lleva su propia dir (LONG / SHORT)
             direcciones_malla = {o['dir'] for o in st.session_state.ordenes_malla} if st.session_state.ordenes_malla else set()
-            if st.session_state.direccion not in direcciones_malla:
-                # solo armamos una nueva malla si no hay otra de la misma dirección
-                monto_nivel = inversion / niveles
-                for i in range(niveles):
-                    if st.session_state.direccion == "LONG":
-                        factor = 1 - (i * distancia)
-                    else:
-                        factor = 1 + (i * distancia)
-                    st.session_state.ordenes_malla.append({
-                        'id': len(st.session_state.ordenes_malla) + 1,
-                        'precio': round(precio_act * factor, 4),
-                        'monto': round(monto_nivel, 2),
-                        'estado': 'PENDIENTE',
-                        'dir': st.session_state.direccion
-                    })
 
-            # Ejecución de órdenes de la malla (abre posición en ese nivel, según su propia dir)
-            for o in st.session_state.ordenes_malla:
-                if o['estado'] == 'PENDIENTE':
-                    if o['dir'] == "LONG":
-                        hit = precio_act <= o['precio']
-                        side = 'buy'
-                    else:
-                        hit = precio_act >= o['precio']
-                        side = 'sell'
-
-                    if hit:
-                        if exchange:
-                            try:
-                                exchange.create_market_order(
-                                    par, side, o['monto'] / precio_act
-                                )
-                            except Exception as ex:
-                                st.warning(f"Orden real fallida: {ex}")
-
-                        st.session_state.saldo_demo -= o['monto']
-                        o['estado'] = 'EJECUTADA'
-
-                        entrada_real = precio_act
-                        if o['dir'] == "LONG":
-                            tp_price = entrada_real * (1 + tp_sensible)
+            # En hedging dinámico: permitimos tener malla LONG y malla SHORT simultáneas
+            # Si hedging desactivado: solo armamos malla de la dirección actual.
+            if hedging_on:
+                # Asegurar que exista malla en la tendencia actual
+                if st.session_state.direccion not in direcciones_malla:
+                    monto_nivel = inversion / niveles
+                    for i in range(niveles):
+                        if st.session_state.direccion == "LONG":
+                            factor = 1 - (i * distancia)
                         else:
-                            tp_price = entrada_real * (1 - tp_sensible)
-
-                        st.session_state.posiciones.append({
-                            'id_orden': o['id'],
-                            'entrada': entrada_real,
-                            'monto': o['monto'],
-                            'tp_precio': tp_price,
-                            'dir': o['dir']
+                            factor = 1 + (i * distancia)
+                        st.session_state.ordenes_malla.append({
+                            'id': len(st.session_state.ordenes_malla) + 1,
+                            'precio': round(precio_act * factor, 4),
+                            'monto': round(monto_nivel, 2),
+                            'estado': 'PENDIENTE',
+                            'dir': st.session_state.direccion
+                        })
+            else:
+                # Sin hedging: limpiamos mallas de dirección contraria cuando gire tendencia
+                st.session_state.ordenes_malla = [o for o in st.session_state.ordenes_malla if o['dir'] == st.session_state.direccion]
+                if st.session_state.direccion not in direcciones_malla:
+                    monto_nivel = inversion / niveles
+                    for i in range(niveles):
+                        if st.session_state.direccion == "LONG":
+                            factor = 1 - (i * distancia)
+                        else:
+                            factor = 1 + (i * distancia)
+                        st.session_state.ordenes_malla.append({
+                            'id': len(st.session_state.ordenes_malla) + 1,
+                            'precio': round(precio_act * factor, 4),
+                            'monto': round(monto_nivel, 2),
+                            'estado': 'PENDIENTE',
+                            'dir': st.session_state.direccion
                         })
 
-            # Gestión de cada posición por nivel (scalp individual + escape inteligente)
+            # --- EJECUCIÓN DE ÓRDENES DE MALLA (MODO SNIPER + NORMAL) ---
+            for o in st.session_state.ordenes_malla:
+                if o['estado'] != 'PENDIENTE':
+                    continue
+
+                dir_o = o['dir']
+                if dir_o == "LONG":
+                    distancia_precio = (o['precio'] - precio_act) / o['precio']
+                    hit_basico = precio_act <= o['precio']
+                else:
+                    distancia_precio = (precio_act - o['precio']) / o['precio']
+                    hit_basico = precio_act >= o['precio']
+
+                hit = hit_basico
+
+                # Modo sniper: en lugar de solo tocar el precio de la malla,
+                # exigimos micro-pico: cambio fuerte reciente + RSI en zona.
+                if sniper_on:
+                    if dir_o == "LONG":
+                        sniper_cond = (cambio_pct >= salto_rapido / 2) and (rsi_use <= 55)
+                    else:
+                        sniper_cond = (cambio_pct >= salto_rapido / 2) and (rsi_use >= 45)
+                    hit = hit_basico and sniper_cond
+
+                if hit:
+                    if exchange:
+                        side = 'buy' if dir_o == "LONG" else 'sell'
+                        try:
+                            exchange.create_market_order(
+                                par, side, o['monto'] / precio_act
+                            )
+                        except Exception as ex:
+                            st.warning(f"Orden real fallida: {ex}")
+
+                    st.session_state.saldo_demo -= o['monto']
+                    o['estado'] = 'EJECUTADA'
+
+                    entrada_real = precio_act
+
+                    # En modo tormenta, acortamos aún más el TP
+                    tp_factor = tp_sensible * (0.7 if st.session_state.modo_tormenta_activo else 1.0)
+
+                    if dir_o == "LONG":
+                        tp_price = entrada_real * (1 + tp_factor)
+                    else:
+                        tp_price = entrada_real * (1 - tp_factor)
+
+                    st.session_state.posiciones.append({
+                        'id_orden': o['id'],
+                        'entrada': entrada_real,
+                        'monto': o['monto'],
+                        'tp_precio': tp_price,
+                        'dir': dir_o
+                    })
+
+            # --- GESTIÓN DE POSICIONES (SCALP + ESCAPE + HEDGE) ---
             nuevas_posiciones = []
             pnl_niveles = []
 
@@ -318,7 +363,7 @@ else:
                 pnl_nivel = retorno * monto * lev
                 pnl_niveles.append((pos, pnl_nivel))
 
-                # Escape inteligente: si hay ganancia y la tendencia va en contra de la posición,
+                # Escape inteligente: si hay ganancia y la tendencia va en contra de esta posición,
                 # cerramos aunque no haya tocado TP exacto.
                 tendencia_contra = (dir_pos == "LONG" and tendencia_calc == "SHORT") or \
                                    (dir_pos == "SHORT" and tendencia_calc == "LONG")
@@ -327,16 +372,17 @@ else:
                 if debug_on:
                     st.write(
                         f"Nivel {pos['id_orden']} | "
-                        f"Dir_pos: {dir_pos} | Dir_nueva: {st.session_state.direccion} | Tend_calc: {tendencia_calc} | "
+                        f"Dir_pos: {dir_pos} | Tend_calc: {tendencia_calc} | "
                         f"Entrada: {entrada:.4f} | TP: {tp_price:.4f} | "
                         f"Precio: {precio_act:.4f} | "
                         f"Retorno: {retorno*100:.4f}% | "
                         f"PnL: {pnl_nivel:.4f} | TP_hit: {tp_hit} | "
                         f"Escape_ganancia: {escape_ganancia} | "
-                        f"RSI_real: {rsi_real:.1f} | RSI_usado: {rsi_use:.1f}"
+                        f"RSI_real: {rsi_real:.1f} | RSI_usado: {rsi_use:.1f} | "
+                        f"Tormenta: {st.session_state.modo_tormenta_activo}"
                     )
 
-                # Cierra SOLO si hay GANANCIA (TP alcanzado o escape por ganancia)
+                # Cierra SOLO si hay GANANCIA (TP alcanzado o escape por tendencia contraria)
                 if pnl_nivel > 0 and (tp_hit or escape_ganancia):
                     if exchange:
                         side_close = 'sell' if dir_pos == "LONG" else 'buy'
@@ -355,7 +401,7 @@ else:
                         'Ganancia': round(pnl_nivel, 4)
                     })
 
-                    # Rearmar el mismo nivel como PENDIENTE (scalper continuo en esa dir)
+                    # Rearmar el mismo nivel como PENDIENTE
                     for o in st.session_state.ordenes_malla:
                         if o['id'] == pos['id_orden'] and o['dir'] == dir_pos:
                             o['estado'] = 'PENDIENTE'
@@ -365,7 +411,7 @@ else:
 
             st.session_state.posiciones = nuevas_posiciones
 
-            # CIERRE POR BLOQUE (opcional): si el PnL total de todas las posiciones es > 0
+            # --- CIERRE POR BLOQUE (opcional) ---
             if cierre_bloque and st.session_state.posiciones:
                 pnl_total_bloque = 0.0
                 for pos in st.session_state.posiciones:
@@ -381,7 +427,6 @@ else:
                     pnl_total_bloque += retorno_b * monto * lev
 
                 if pnl_total_bloque > 0:
-                    # cerramos TODO el bloque en ganancia neta
                     for pos in st.session_state.posiciones:
                         entrada = pos['entrada']
                         monto = pos['monto']
@@ -412,7 +457,6 @@ else:
                             'Ganancia': round(pnl_nivel_b, 4)
                         })
 
-                    # limpiamos posiciones y mallas para girar limpio
                     st.session_state.posiciones = []
                     st.session_state.ordenes_malla = []
 
@@ -426,95 +470,7 @@ else:
             # --- GRÁFICO CON ENTRADAS, TP, MALLA Y RSI ---
             fig = go.Figure()
 
-            # Serie de precio
             fig.add_trace(go.Scatter(
                 y=st.session_state.precios_hist,
                 name="Precio",
-                line=dict(color='#F0B90B', width=3)
-            ))
-
-            # Entradas y TP de posiciones abiertas (todas, mezcladas)
-            if st.session_state.posiciones:
-                x_idx = [len(st.session_state.precios_hist) - 1] * len(st.session_state.posiciones)
-                
-                entrada_prom = sum(p['entrada'] for p in st.session_state.posiciones) / len(st.session_state.posiciones)
-                tp_prom = sum(p['tp_precio'] for p in st.session_state.posiciones) / len(st.session_state.posiciones)
-
-                fig.add_hline(
-                    y=entrada_prom,
-                    line=dict(color='cyan', width=2),
-                    annotation_text="Nivel entrada",
-                    annotation_position="top left"
-                )
-
-                fig.add_hline(
-                    y=tp_prom,
-                    line=dict(color='lime', width=2, dash='dot'),
-                    annotation_text="Objetivo TP",
-                    annotation_position="bottom left"
-                )
-
-                fig.add_trace(go.Scatter(
-                    x=x_idx,
-                    y=[p['entrada'] for p in st.session_state.posiciones],
-                    mode='markers',
-                    name='Entradas abiertas',
-                    marker=dict(color='cyan', size=9, symbol='triangle-up')
-                ))
-                fig.add_trace(go.Scatter(
-                    x=x_idx,
-                    y=[p['tp_precio'] for p in st.session_state.posiciones],
-                    mode='markers',
-                    name='TP por nivel',
-                    marker=dict(color='lime', size=8, symbol='x')
-                ))
-
-            # Niveles de malla (LONG/SHORT)
-            if st.session_state.ordenes_malla:
-                for o in st.session_state.ordenes_malla:
-                    color = 'gray' if o['estado'] == 'PENDIENTE' else '#F39C12'
-                    fig.add_hline(
-                        y=o['precio'],
-                        line=dict(color=color, width=1, dash='dot'),
-                        opacity=0.3,
-                    )
-
-            # RSI en eje secundario (usando RSI que se utilizó en la lógica)
-            if st.session_state.rsi_hist:
-                fig.add_trace(go.Scatter(
-                    y=st.session_state.rsi_hist,
-                    name="RSI (uso)",
-                    line=dict(color='magenta', width=2, dash='dash'),
-                    yaxis="y2"
-                ))
-
-            fig.update_layout(
-                height=500,
-                template="plotly_dark",
-                margin=dict(l=0, r=0, b=0, t=10),
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-                yaxis=dict(title="Precio"),
-                yaxis2=dict(
-                    title="RSI",
-                    overlaying="y",
-                    side="right",
-                    range=[0, 100],
-                    showgrid=False
-                )
-            )
-            st.plotly_chart(fig, use_container_width=True)
-
-            st.subheader("📋 Malla de Operación")
-            st.dataframe(st.session_state.ordenes_malla, use_container_width=True)
-
-            st.subheader("📈 Historial de PNL por nivel / bloque")
-            if st.session_state.historial_pnl:
-                st.dataframe(st.session_state.historial_pnl, use_container_width=True)
-
-            time.sleep(delay)
-            st.rerun()
-
-        except Exception as e:
-            st.error(f"Error: {e}")
-            time.sleep(3)
-            st.rerun()
+                line=dict(
