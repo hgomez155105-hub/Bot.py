@@ -77,12 +77,13 @@ def calcular_rsi(precios, periodo=14):
 
 def obtener_tendencia(precios, rsi):
     """
-    Tendencia simple combinando precio y RSI:
+    Tendencia simple combinando EMA corta + RSI:
     - LONG si precio por encima de EMA y RSI < 70
     - SHORT si precio por debajo de EMA y RSI > 30
+    - Si está neutro, mantiene dirección actual
     """
     if len(precios) < 10:
-        return "LONG"
+        return st.session_state.get('direccion', 'LONG')
     ema = np.mean(precios[-10:])
     precio = precios[-1]
     if precio >= ema and rsi <= 70:
@@ -90,7 +91,6 @@ def obtener_tendencia(precios, rsi):
     elif precio < ema and rsi >= 30:
         return "SHORT"
     else:
-        # si está medio neutro, mantenemos la última dirección
         return st.session_state.get('direccion', 'LONG')
 
 # --- LOGIN ---
@@ -123,7 +123,9 @@ else:
             'ultimo_par': "",
             'historial_pnl': [],
             'direccion': 'LONG',
-            'ultimo_precio': None
+            'ultimo_precio': None,
+            'bloquear_nuevas_ordenes': False,
+            'rsi_hist': []
         })
 
     # --- HEADER ---
@@ -144,6 +146,7 @@ else:
                 'precios_hist': [],
                 'posiciones': [],
                 'ordenes_malla': [],
+                'rsi_hist': [],
                 'ultimo_par': par
             })
         
@@ -180,7 +183,8 @@ else:
         if st.button("🚨 BOTÓN DE PÁNICO", use_container_width=True):
             st.session_state.update({
                 'posiciones': [],
-                'ordenes_malla': []
+                'ordenes_malla': [],
+                'bloquear_nuevas_ordenes': False
             })
             st.rerun()
 
@@ -214,15 +218,32 @@ else:
             if len(st.session_state.precios_hist) > 200:
                 st.session_state.precios_hist.pop(0)
             
+            # RSI e historial RSI
             rsi_val = calcular_rsi(st.session_state.precios_hist)
+            st.session_state.rsi_hist.append(rsi_val)
+            if len(st.session_state.rsi_hist) > 200:
+                st.session_state.rsi_hist.pop(0)
+
+            # Tendencia calculada
             tendencia_calc = obtener_tendencia(st.session_state.precios_hist, rsi_val)
 
-            # Autoajuste de dirección solo cuando NO hay posiciones abiertas
+            # --- AUTOAJUSTE DE DIRECCIÓN / BLOQUEO ---
             if not st.session_state.posiciones:
+                # sin posiciones, se puede cambiar de dirección libremente
                 st.session_state.direccion = tendencia_calc
+                st.session_state.bloquear_nuevas_ordenes = False
+            else:
+                # si hay posiciones y la tendencia va fuerte en contra, bloquear nuevas órdenes
+                if st.session_state.direccion == "LONG" and tendencia_calc == "SHORT" and rsi_val < 45:
+                    st.session_state.bloquear_nuevas_ordenes = True
+                elif st.session_state.direccion == "SHORT" and tendencia_calc == "LONG" and rsi_val > 55:
+                    st.session_state.bloquear_nuevas_ordenes = True
 
-            # Armado de malla inicial si no hay malla ni posiciones
-            if not st.session_state.ordenes_malla and not st.session_state.posiciones:
+            # Armado de malla inicial si no hay malla ni posiciones y NO está bloqueado
+            if (not st.session_state.ordenes_malla and 
+                not st.session_state.posiciones and 
+                not st.session_state.bloquear_nuevas_ordenes):
+
                 monto_nivel = inversion / niveles
                 st.session_state.ordenes_malla = []
                 for i in range(niveles):
@@ -240,6 +261,10 @@ else:
             # Ejecución de órdenes de la malla (abre posición en ese nivel)
             for o in st.session_state.ordenes_malla:
                 if o['estado'] == 'PENDIENTE':
+                    # si está bloqueado, no abre nuevas posiciones en esta dirección
+                    if st.session_state.bloquear_nuevas_ordenes:
+                        continue
+
                     hit_long = st.session_state.direccion == "LONG" and precio_act <= o['precio']
                     hit_short = st.session_state.direccion == "SHORT" and precio_act >= o['precio']
                     if hit_long or hit_short:
@@ -291,10 +316,11 @@ else:
                         f"Entrada: {entrada:.4f} | TP: {tp_price:.4f} | "
                         f"Precio: {precio_act:.4f} | "
                         f"Retorno: {retorno*100:.4f}% | "
-                        f"PnL: {pnl_nivel:.4f} | TP_hit: {tp_hit}"
+                        f"PnL: {pnl_nivel:.4f} | TP_hit: {tp_hit} | "
+                        f"Tendencia_calc: {tendencia_calc} | Bloqueado: {st.session_state.bloquear_nuevas_ordenes}"
                     )
 
-                # Cierre SOLO si hay ganancia
+                # Cierra SOLO si hay GANANCIA
                 if tp_hit and pnl_nivel > 0:
                     if exchange:
                         side = 'sell' if st.session_state.direccion == "LONG" else 'buy'
@@ -330,52 +356,83 @@ else:
             pnl_display = st.session_state.ganancia_total
             c3.metric("PNL Total", f"${pnl_display:,.2f}", delta=f"RSI: {rsi_val:.1f}")
 
-            # --- GRÁFICO CON ENTRADAS, TP Y MALLA ---
+            # --- GRÁFICO CON ENTRADAS, TP, MALLA Y RSI ---
             fig = go.Figure()
 
-            # serie de precio
+            # Serie de precio
             fig.add_trace(go.Scatter(
                 y=st.session_state.precios_hist,
                 name="Precio",
                 line=dict(color='#F0B90B', width=3)
             ))
 
-            # puntos de entrada de posiciones abiertas
+            # Entradas y TP de posiciones abiertas
             if st.session_state.posiciones:
                 x_idx = [len(st.session_state.precios_hist) - 1] * len(st.session_state.posiciones)
+                
+                entrada_prom = sum(p['entrada'] for p in st.session_state.posiciones) / len(st.session_state.posiciones)
+                fig.add_hline(
+                    y=entrada_prom,
+                    line=dict(color='cyan', width=2),
+                    annotation_text="Nivel entrada",
+                    annotation_position="top left"
+                )
+
+                tp_prom = sum(p['tp_precio'] for p in st.session_state.posiciones) / len(st.session_state.posiciones)
+                fig.add_hline(
+                    y=tp_prom,
+                    line=dict(color='lime', width=2, dash='dot'),
+                    annotation_text="Objetivo TP",
+                    annotation_position="bottom left"
+                )
+
                 fig.add_trace(go.Scatter(
                     x=x_idx,
                     y=[p['entrada'] for p in st.session_state.posiciones],
                     mode='markers',
                     name='Entradas abiertas',
-                    marker=dict(color='cyan', size=10, symbol='triangle-up')
+                    marker=dict(color='cyan', size=9, symbol='triangle-up')
                 ))
-                # TPs de esas posiciones
                 fig.add_trace(go.Scatter(
                     x=x_idx,
                     y=[p['tp_precio'] for p in st.session_state.posiciones],
                     mode='markers',
                     name='TP por nivel',
-                    marker=dict(color='lime', size=9, symbol='x')
+                    marker=dict(color='lime', size=8, symbol='x')
                 ))
 
-            # niveles de malla (pendientes y ejecutados) como líneas horizontales suaves
+            # Niveles de malla
             if st.session_state.ordenes_malla:
-                x0 = 0
-                x1 = len(st.session_state.precios_hist) - 1
                 for o in st.session_state.ordenes_malla:
                     color = 'gray' if o['estado'] == 'PENDIENTE' else '#F39C12'
                     fig.add_hline(
                         y=o['precio'],
                         line=dict(color=color, width=1, dash='dot'),
-                        opacity=0.4,
+                        opacity=0.3,
                     )
 
+            # RSI en eje secundario
+            if st.session_state.rsi_hist:
+                fig.add_trace(go.Scatter(
+                    y=st.session_state.rsi_hist,
+                    name="RSI",
+                    line=dict(color='magenta', width=2, dash='dash'),
+                    yaxis="y2"
+                ))
+
             fig.update_layout(
-                height=400,
+                height=500,
                 template="plotly_dark",
-                margin=dict(l=0, r=0, b=0, t=0),
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+                margin=dict(l=0, r=0, b=0, t=10),
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                yaxis=dict(title="Precio"),
+                yaxis2=dict(
+                    title="RSI",
+                    overlaying="y",
+                    side="right",
+                    range=[0, 100],
+                    showgrid=False
+                )
             )
             st.plotly_chart(fig, use_container_width=True)
 
