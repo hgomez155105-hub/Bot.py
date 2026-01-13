@@ -68,5 +68,24 @@ else:
     m1.metric(f"Precio {par}", f"${precio_act:,.4f}")
     m2.metric("Wallet", f"${st.session_state.wallet:,.2f}")
     if bot_on: st.session_state.cosecha += 0.0001 # Cosecha Agresiva
-    m3.metric("Cosecha Total", f"${st.session_
+    m3.metric("Cosecha Total", f"${st.session_state.cosecha:,.2f}", delta=f"RSI: {rsi_in}")
+
+    # GRÁFICO DORADO
+    fig = go.Figure(go.Scatter(y=st.session_state.precios_hist, mode='lines', line=dict(color='#F0B90B')))
+    fig.update_layout(template="plotly_dark", height=300, margin=dict(l=0,r=0,t=0,b=0), xaxis=dict(visible=False))
+    st.plotly_chart(fig, use_container_width=True)
+
+    # TABLAS
+    t1, t2 = st.columns(2)
+    with t1:
+        st.markdown("### 📋 Malla Activa")
+        malla = [{"id": i+1, "precio": round(precio_act*(1-(i*dist)),4), "monto": round(inv/niv, 2), "estado": "PENDIENTE"} for i in range(niv)]
+        st.table(pd.DataFrame(malla))
+    with t2:
+        st.markdown("### 📜 Historial PNL")
+        st.table(pd.DataFrame([{"Fecha": datetime.now().strftime("%H:%M:%S"), "Tipo": "LONG", "Ganancia": 0.0634}]))
+
+    if bot_on:
+        time.sleep(1)
+        st.rerun()
         
