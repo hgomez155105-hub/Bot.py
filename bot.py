@@ -15,13 +15,12 @@ def verificar_acceso(u, p):
         df = pd.read_csv(SHEET_URL)
         df.columns = df.columns.str.strip().str.lower()
         match = df[
-            (df['usuario"].astype(str).str.strip() == str(u).strip()) &
-            (df['clave"].astype(str).str.strip() == str(p).strip())
+            (df['usuario'].astype(str).str.strip() == str(u).strip()) &
+            (df['clave'].astype(str).str.strip() == str(p).strip())
         ]
         return not match.empty
     except:
         return False
-
 # --- CONFIGURACIÓN PÁGINA ---
 st.set_page_config(page_title="H y G Inovaciones", layout="wide", page_icon="👁️")
 
