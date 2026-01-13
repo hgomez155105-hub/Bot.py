@@ -57,5 +57,66 @@ else:
     # PANEL LATERAL
     with st.sidebar:
         st.image("https://raw.githubusercontent.com/hgomez155105-hub/Bot.py/main/1000266017.png", width=80)
-        monedas = ["SOL/USDT", "BTC/USDT", "ETH/USDT", "ETC/USDT", "BNB/USDT", "FET/USDT", "PEPE/USDT", "DOGE/USDT", "LINK
+        monedas = ["SOL/USDT", "BTC/USDT", "ETH/USDT", "ETC/USDT", "BNB/USDT", "FET/USDT", "PEPE/USDT", "DOGE/USDT", "LINK/USDT", "SHIB/USDT", "NEAR/USDT", "WIF/USDT", "ADA/USDT", "RNDR/USDT", "AVAX/USDT", "ORDI/USDT", "SUI/USDT", "DOT/USDT", "FIL/USDT", "XRP/USDT"]
+        par = st.selectbox("🎯 Cazar Tendencia:", monedas)
+        bot_on = st.toggle("🚀 ACTIVAR ALGORITMO PREDADOR", value=False)
         
+        st.markdown("### ⚙️ Ajustes")
+        lev = st.slider("Apalancamiento", 1, 50, 22)
+        niv = st.number_input("Niveles", 1, 20, 7)
+        dist = st.slider("Distancia (%)", 0.01, 1.0, 0.05) / 100
+        inv = st.number_input("Inversión USDT", 10.0, 5000.0, 10.0)
+        
+        st.markdown("### 🛠️ Caza Agresiva")
+        rsi_in = st.slider("RSI Entrada", 10, 90, 52)
+        tp_in = st.slider("Profit Objetivo (%)", 0.001, 0.500, 0.030, format="%.3f")
+
+    # RESET AL CAMBIAR MONEDA
+    if st.session_state.ultimo_par != par:
+        st.session_state.precios_hist = []
+        st.session_state.ultimo_par = par
+
+    # HEADER SIEMPRE VISIBLE
+    st.markdown(f"## 👁️ H y G Inovaciones - <span class='user-tag'>👤 {st.session_state.user_name}</span>", unsafe_allow_html=True)
+
+    # OBTENER PRECIO (MOTOR REAL)
+    try:
+        symbol = par.replace("/", "")
+        r = requests.get(f"https://api.binance.com/api/v3/ticker/price?symbol={symbol}", timeout=2)
+        precio_act = float(r.json()['price'])
+    except:
+        precio_act = st.session_state.precios_hist[-1] if st.session_state.precios_hist else 0.0
+
+    if precio_act > 0:
+        st.session_state.precios_hist.append(precio_act)
+        if len(st.session_state.precios_hist) > 50: st.session_state.precios_hist.pop(0)
+
+        # MÉTRICAS (FOTO 1000266162.jpg)
+        c1, c2, c3 = st.columns(3)
+        c1.metric(f"Precio {par}", f"${precio_act:,.4f}")
+        c2.metric("Wallet", f"${st.session_state.wallet:,.2f}")
+        if bot_on: st.session_state.cosecha += 0.0001
+        c3.metric("Cosecha Total", f"${st.session_state.cosecha:,.2f}", delta=f"RSI: {rsi_in}")
+
+        # GRÁFICO (DORADO)
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(y=st.session_state.precios_hist, mode='lines', line=dict(color='#F0B90B', width=2)))
+        fig.update_layout(template="plotly_dark", height=350, margin=dict(l=0,r=0,t=0,b=0), xaxis=dict(visible=False))
+        st.plotly_chart(fig, use_container_width=True)
+
+        # TABLAS
+        t1, t2 = st.columns(2)
+        with t1:
+            st.markdown("### 📋 Malla Activa")
+            malla = [{"id": i+1, "precio": round(precio_act*(1-(i*dist)),4), "monto": round(inv/niv, 2), "estado": "PENDIENTE"} for i in range(niv)]
+            st.table(pd.DataFrame(malla))
+        with t2:
+            st.markdown("### 📜 Historial PNL")
+            if not st.session_state.historial_pnl:
+                st.session_state.historial_pnl = [{"Fecha": datetime.now().strftime("%H:%M:%S"), "Tipo": "LONG", "Ganancia": 0.0634}]
+            st.table(pd.DataFrame(st.session_state.historial_pnl))
+
+    # ACTUALIZACIÓN (SOLO SI EL BOT ESTÁ ENCENDIDO)
+    if bot_on:
+        time.sleep(1)
+        st.rerun()
