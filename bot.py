@@ -129,8 +129,7 @@ def sniper_inteligente(dir_o, precio_act, precio_anterior, rsi_use, volatilidad)
 # ============================================================
 
 if 'autenticado' not in st.session_state:
-    st.session_state.autenticado = False
-
+    st.session_state.get('user_name', 'Invitado')
 if not st.session_state.autenticado:
     col1, col2, col3 = st.columns([1, 1.5, 1])
     with col2:
