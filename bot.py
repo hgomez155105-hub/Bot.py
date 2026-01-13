@@ -5,24 +5,10 @@ import time
 import plotly.graph_objects as go
 import numpy as np
 from datetime import datetime
-import ccxt
+import ccxt  # Librería para conectar con Binance
 
 # --- CONFIGURACIÓN ---
 st.set_page_config(page_title="H y G Inovaciones", layout="wide", page_icon="👁️")
-
-# --- CONEXIÓN CON GOOGLE SHEETS PARA LOGUEO ---
-# Reemplaza con la URL de tu hoja de Google Sheets (formato CSV)
-SHEET_URL = "https://docs.google.com/spreadsheets/d/TU_ID_DE_HOJA/export?format=csv"
-
-def verificar_credenciales(usuario_ingresado, clave_ingresada):
-    try:
-        df_users = pd.read_csv(SHEET_URL)
-        # Asumiendo que tu hoja tiene columnas 'usuario' y 'password'
-        user_match = df_users[(df_users['usuario'] == usuario_ingresado) & (df_users['password'].astype(str) == clave_ingresada)]
-        return not user_match.empty
-    except:
-        # Si falla la conexión, por seguridad no dejamos entrar
-        return False
 
 # --- ESTILO VISUAL ---
 st.markdown("""
@@ -36,17 +22,24 @@ st.markdown("""
 
 LOGO_URL = "https://raw.githubusercontent.com/hgomez155105-hub/Bot.py/main/1000266017.png"
 
-# --- FUNCIONES TÉCNICAS (SE MANTIENEN TODAS) ---
+# --- FUNCIONES TÉCNICAS ---
 def conectar_binance(api_key, secret_key):
     try:
-        return ccxt.binance({'apiKey': api_key, 'secret': secret_key, 'enableRateLimit': True, 'options': {'defaultType': 'future'}})
+        exchange = ccxt.binance({
+            'apiKey': api_key,
+            'secret': secret_key,
+            'enableRateLimit': True,
+            'options': {'defaultType': 'future'} # Cambiar a 'spot' si no usas futuros
+        })
+        return exchange
     except: return None
 
 def obtener_top_20_binance():
     try:
         url = "https://api.binance.com/api/v3/ticker/24hr"
         res = requests.get(url).json()
-        df_vol = pd.DataFrame(res); df_vol = df_vol[df_vol['symbol'].str.endswith('USDT')]
+        df_vol = pd.DataFrame(res)
+        df_vol = df_vol[df_vol['symbol'].str.endswith('USDT')]
         df_vol['quoteVolume'] = df_vol['quoteVolume'].astype(float)
         top_20 = df_vol.sort_values(by='quoteVolume', ascending=False).head(20)
         return [f"{s[:-4]}/USDT" for s in top_20['symbol']]
@@ -56,6 +49,7 @@ def calcular_rsi(precios, periodo=14):
     if len(precios) < periodo + 1: return 50
     deltas = np.diff(precios); ganancias = deltas.clip(min=0); perdidas = -deltas.clip(max=0)
     avg_gain = np.mean(ganancias[-periodo:]); avg_loss = np.mean(perdidas[-periodo:])
+    if avg_loss == 0: return 100
     return 100 - (100 / (1 + (avg_gain / (avg_loss if avg_loss != 0 else 0.001))))
 
 def obtener_tendencia(precios):
@@ -63,7 +57,7 @@ def obtener_tendencia(precios):
     ema = np.mean(precios[-10:])
     return "LONG" if precios[-1] >= ema else "SHORT"
 
-# --- LOGIN SEGURO ---
+# --- LOGIN ---
 if 'autenticado' not in st.session_state: st.session_state.autenticado = False
 
 if not st.session_state.autenticado:
@@ -71,18 +65,10 @@ if not st.session_state.autenticado:
     with col2:
         st.image(LOGO_URL, width=200)
         st.markdown("<h2 style='text-align: center;'>H y G Inovaciones</h2>", unsafe_allow_html=True)
-        u = st.text_input("Usuario")
-        p = st.text_input("Contraseña", type="password")
+        u = st.text_input("Usuario"); p = st.text_input("Contraseña", type="password")
         if st.button("ACCEDER AL SISTEMA", use_container_width=True):
-            if verificar_credenciales(u, p):
-                st.session_state.autenticado = True
-                st.session_state.user_name = u
-                st.success("Acceso concedido")
-                st.rerun()
-            else:
-                st.error("Credenciales incorrectas. Verifique su suscripción.")
+            st.session_state.autenticado = True; st.session_state.user_name = u; st.rerun()
 else:
-    # --- INICIALIZACIÓN DE VARIABLES ---
     if 'saldo_demo' not in st.session_state:
         st.session_state.update({'saldo_demo': 1000.0, 'ganancia_total': 0.0, 'posiciones': [], 
                                  'precios_hist': [], 'ordenes_malla': [], 'ultimo_par': "", 
@@ -93,7 +79,7 @@ else:
     c_h1.markdown(f"## 👁️ H y G Inovaciones - <span class='user-tag'>👤 {st.session_state.user_name}</span>", unsafe_allow_html=True)
     c_h2.image(LOGO_URL, width=70)
 
-    # --- SIDEBAR (MODO REAL/DEMO) ---
+    # --- SIDEBAR ---
     with st.sidebar:
         st.image(LOGO_URL, width=100)
         par = st.selectbox("🎯 Objetivo Binance:", obtener_top_20_binance())
@@ -117,10 +103,11 @@ else:
         if st.button("🚨 BOTÓN DE PÁNICO", use_container_width=True):
             st.session_state.update({'posiciones': [], 'ordenes_malla': [], 'max_pnl_alcanzado': 0.0}); st.rerun()
 
-    # --- MOTOR PREDADOR ---
+    # --- LÓGICA DE EJECUCIÓN ---
     bot_on = st.toggle("🚀 ACTIVAR ALGORITMO PREDADOR")
     if bot_on:
         try:
+            # Conexión Real si aplica
             exchange = None
             if entorno == "🟡 MODO REAL" and api_k and api_s:
                 exchange = conectar_binance(api_k, api_s)
@@ -133,7 +120,7 @@ else:
             rsi_val = calcular_rsi(st.session_state.precios_hist)
             tendencia = obtener_tendencia(st.session_state.precios_hist)
 
-            # 1. ENTRADA (Lógica de Malla Independiente)
+            # 1. ENTRADA
             if not st.session_state.ordenes_malla and not st.session_state.posiciones:
                 if (tendencia == "LONG" and rsi_val <= 50) or (tendencia == "SHORT" and rsi_val >= 50):
                     st.session_state.direccion = tendencia
@@ -145,13 +132,13 @@ else:
                             'monto': round(monto_nivel, 2), 'estado': 'PENDIENTE'
                         })
 
-            # 2. EJECUCIÓN
+            # 2. EJECUCIÓN (REAL O DEMO)
             for o in st.session_state.ordenes_malla:
                 if o['estado'] == 'PENDIENTE':
                     hit = (st.session_state.direccion == "LONG" and precio_act <= o['precio']) or \
                           (st.session_state.direccion == "SHORT" and precio_act >= o['precio'])
                     if hit:
-                        if exchange:
+                        if exchange: # Si es REAL
                             side = 'buy' if st.session_state.direccion == "LONG" else 'sell'
                             exchange.create_market_order(par, side, o['monto'] / precio_act)
                         
@@ -159,7 +146,7 @@ else:
                         o['estado'] = 'EJECUTADA'
                         st.session_state.posiciones.append({'entrada': precio_act, 'monto': o['monto']})
 
-            # 3. PROFIT DINÁMICO (TRAILING)
+            # 3. CIERRE CON TRAILING PROFIT
             if st.session_state.posiciones:
                 t_inv = sum(p['monto'] for p in st.session_state.posiciones)
                 p_prom = sum(p['entrada'] for p in st.session_state.posiciones) / len(st.session_state.posiciones)
@@ -169,8 +156,8 @@ else:
                     if pnl_actual > st.session_state.max_pnl_alcanzado:
                         st.session_state.max_pnl_alcanzado = pnl_actual
                     
-                    if pnl_actual < (st.session_state.max_pnl_alcanzado * 0.98): # Cierre al retroceder
-                        if exchange:
+                    if pnl_actual < (st.session_state.max_pnl_alcanzado * 0.98): # Cierre al retroceder 2%
+                        if exchange: # Cierre en REAL
                             side = 'sell' if st.session_state.direccion == "LONG" else 'buy'
                             exchange.create_market_order(par, side, t_inv / precio_act)
                         
@@ -182,15 +169,20 @@ else:
 
             # --- UI ---
             c1, c2, c3 = st.columns(3)
-            c1.metric(f"Precio", f"${precio_act:,.4f}")
-            c2.metric("Wallet", f"${st.session_state.saldo_demo:,.2f}")
-            c3.metric("Cosecha Total", f"${st.session_state.ganancia_total:,.2f}")
+            c1.metric(f"Precio ({st.session_state.direccion})", f"${precio_act:,.4f}")
+            c2.metric("Wallet Balance", f"${st.session_state.saldo_demo:,.2f}")
+            c3.metric("PNL Total", f"${st.session_state.ganancia_total:,.2f}", delta=f"RSI: {rsi_val:.1f}")
 
             fig = go.Figure()
             fig.add_trace(go.Scatter(y=st.session_state.precios_hist, name="Precio", line=dict(color='#F0B90B', width=3)))
             fig.update_layout(height=400, template="plotly_dark", margin=dict(l=0,r=0,b=0,t=0))
             st.plotly_chart(fig, use_container_width=True)
 
+            st.subheader("📋 Malla de Operación")
+            st.dataframe(st.session_state.ordenes_malla, use_container_width=True)
+
             time.sleep(1); st.rerun()
         except Exception as e:
+            st.error(f"Error: {e}")
             time.sleep(5); st.rerun()
+            
