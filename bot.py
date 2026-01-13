@@ -146,12 +146,12 @@ else:
         lev = st.slider("Apalancamiento", 1, 50, 20)
         niveles = st.number_input("Cantidad de Niveles", 1, 50, 10)
         distancia = st.slider("Distancia Malla (%)", 0.01, 1.0, 0.2, format="%.3f") / 100
-        inversion = st.number_input("Inversión Total (USDT)", 10.0, 10000.0, 100.0)
+        inversion = st.number_input("Inversión Total (USDT)", 10.0, 10000.0, 10.0)
 
-        # Objetivo de profit por nivel (scalp por orden)
+        # <<< CAMBIO: nos aseguramos que el valor sea porcentaje / 100
         tp_sensible = st.slider(
             "Profit Objetivo por Nivel (%)",
-            0.02, 1.5, 0.20, format="%.2f"
+            0.01, 1.50, 0.20, format="%.2f"
         ) / 100
 
         st.divider()
@@ -162,6 +162,9 @@ else:
         ) / 100
         sleep_normal = st.slider("Delay normal (seg)", 0.5, 3.0, 1.0)
         sleep_rapido = st.slider("Delay rápido (seg)", 0.05, 0.5, 0.15)
+
+        st.divider()
+        debug_on = st.checkbox("👀 Ver debug interno por nivel")  # <<< CAMBIO
 
         if st.button("🚨 BOTÓN DE PÁNICO", use_container_width=True):
             st.session_state.update({
@@ -206,7 +209,7 @@ else:
             rsi_val = calcular_rsi(st.session_state.precios_hist)
             tendencia = obtener_tendencia(st.session_state.precios_hist)
 
-            # Armado de malla inicial (solo dirección y momento)
+            # Armado de malla inicial (usa RSI/tendencia solo para dirección)
             if not st.session_state.ordenes_malla and not st.session_state.posiciones:
                 if (tendencia == "LONG" and rsi_val <= 60) or (tendencia == "SHORT" and rsi_val >= 40):
                     st.session_state.direccion = tendencia
@@ -238,20 +241,20 @@ else:
                                 )
                             except Exception as ex:
                                 st.warning(f"Orden real fallida: {ex}")
-                        # Descuento margen de la wallet demo
+
                         st.session_state.saldo_demo -= o['monto']
                         o['estado'] = 'EJECUTADA'
 
-                        # Defino TP por nivel según dirección
+                        # <<< CAMBIO: usamos el PRECIO REAL de entrada para TP
+                        entrada_real = precio_act
                         if st.session_state.direccion == "LONG":
-                            tp_price = o['precio'] * (1 + tp_sensible)
+                            tp_price = entrada_real * (1 + tp_sensible)
                         else:
-                            tp_price = o['precio'] * (1 - tp_sensible)
+                            tp_price = entrada_real * (1 - tp_sensible)
 
-                        # Registro posición individual
                         st.session_state.posiciones.append({
                             'id_orden': o['id'],
-                            'entrada': o['precio'],
+                            'entrada': entrada_real,
                             'monto': o['monto'],
                             'tp_precio': tp_price
                         })
@@ -263,7 +266,6 @@ else:
                 monto = pos['monto']
                 tp_price = pos['tp_precio']
 
-                # Verifico si se alcanzó el TP del nivel
                 if st.session_state.direccion == "LONG":
                     tp_hit = precio_act >= tp_price
                     retorno = (precio_act / entrada) - 1
@@ -273,8 +275,18 @@ else:
 
                 pnl_nivel = retorno * monto * lev
 
+                # <<< CAMBIO: debug opcional para ver por qué no cierra
+                if debug_on:
+                    st.write(
+                        f"Nivel {pos['id_orden']} | "
+                        f"Entrada: {entrada:.4f} | TP: {tp_price:.4f} | "
+                        f"Precio actual: {precio_act:.4f} | "
+                        f"retorno: {retorno*100:.4f}% | "
+                        f"PnL nivel: {pnl_nivel:.4f} | TP_hit: {tp_hit}"
+                    )
+
+                # Condición: SIEMPRE cerrar solo si hay GANANCIA
                 if tp_hit and pnl_nivel > 0:
-                    # Cierre de la posición de ese nivel
                     if exchange:
                         side = 'sell' if st.session_state.direccion == "LONG" else 'buy'
                         try:
@@ -284,7 +296,6 @@ else:
                         except Exception as ex:
                             st.warning(f"Cierre real fallido (nivel): {ex}")
 
-                    # Sumamos margen + profit a la wallet demo
                     st.session_state.saldo_demo += (monto + pnl_nivel)
                     st.session_state.ganancia_total += pnl_nivel
                     st.session_state.historial_pnl.append({
@@ -297,10 +308,8 @@ else:
                     for o in st.session_state.ordenes_malla:
                         if o['id'] == pos['id_orden']:
                             o['estado'] = 'PENDIENTE'
-                            # Mantengo el mismo precio de malla
                             break
                 else:
-                    # La posición sigue abierta
                     nuevas_posiciones.append(pos)
 
             st.session_state.posiciones = nuevas_posiciones
@@ -332,7 +341,6 @@ else:
             if st.session_state.historial_pnl:
                 st.dataframe(st.session_state.historial_pnl, use_container_width=True)
 
-            # --- REFRESCO DINÁMICO ---
             time.sleep(delay)
             st.rerun()
 
