@@ -22,7 +22,28 @@ def verificar_acceso(u, p):
     except:
         return False
 # --- CONFIGURACIÓN PÁGINA ---
-st.set_page_config(page_title="H y G Inovaciones", layout="wide", page_icon="👁️")
+st.set_page_config(
+    page_title="H y G Inovaciones",
+    layout="wide",
+    page_icon=LOGO_URL  # Ícono de pestaña
+)
+
+# --- ESTILO VISUAL ---
+st.markdown(f"""
+    <style>
+    .stApp {{ background-color: #0B0E11 !important; }}
+    .user-tag {{ background: #1E2329; padding: 5px 15px; border-radius: 20px; border: 1px solid #F0B90B; color: white; }}
+    [data-testid="stMetricValue"] {{ color: #F0B90B !important; font-size: 1.8rem !important; }}
+    h1, h2, h3 {{ color: white !important; }}
+    </style>
+    <div style='text-align: center; margin-top: -30px;'>
+        <img src="{LOGO_URL}" width="120">
+        <h1 style='color: white;'>H y G Inovaciones – Admin</h1>
+    </div>
+    """, unsafe_allow_html=True)
+
+# --- LOGO EN SIDEBAR ---
+st.sidebar.image(LOGO_URL, width=150)st.set_page_config(page_title="H y G Inovaciones", layout="wide", page_icon="👁️")
 
 # --- ESTILO VISUAL ---
 st.markdown("""
