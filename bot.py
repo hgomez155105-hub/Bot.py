@@ -43,7 +43,8 @@ st.markdown(f"""
     """, unsafe_allow_html=True)
 
 # --- LOGO EN SIDEBAR ---
-st.sidebar.image(LOGO_URL, width=150)st.set_page_config(page_title="H y G Inovaciones", layout="wide", page_icon="👁️")
+st.sidebar.image(LOGO_URL, width=150)
+st.set_page_config(page_title="H y G Inovaciones", layout="wide", page_icon="👁️")
 
 # --- ESTILO VISUAL ---
 st.markdown("""
