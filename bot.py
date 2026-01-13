@@ -69,5 +69,102 @@ else:
 
     # --- SIDEBAR (RESTAURADO MODO REAL/DEMO) ---
     with st.sidebar:
-        st.
+        st.image(LOGO_URL, width=100)
+        par = st.selectbox("🎯 Objetivo Binance:", obtener_top_20_binance())
+        if par != st.session_state.ultimo_par:
+            st.session_state.update({'precios_hist': [], 'posiciones': [], 'ordenes_malla': [], 'ultimo_par': par})
         
+        st.divider()
+        st.subheader("🔑 Conexión Exchange")
+        entorno = st.radio("Entorno:", ["🟢 MODO DEMO", "🟡 MODO REAL"])
+        api_k = st.text_input("API Key", type="password")
+        api_s = st.text_input("Secret Key", type="password")
+        
+        st.divider()
+        st.subheader("⚙️ Configuración de Malla")
+        lev = st.slider("Apalancamiento", 1, 50, 50)
+        niveles = st.number_input("Cantidad de Niveles", 1, 50, 5)
+        distancia = st.slider("Distancia Malla (%)", 0.01, 1.0, 0.05) / 100
+        inversion = st.number_input("Inversión Total (USDT)", 10.0, 10000.0, 100.0)
+        
+        st.subheader("🛠️ Caza Agresiva")
+        rsi_limite = st.slider("RSI Entrada", 10, 90, 50)
+        tp_sensible = st.slider("Profit Objetivo (%)", 0.005, 1.0, 0.03, format="%.3f") / 100
+        
+        if st.button("🚨 BOTÓN DE PÁNICO", use_container_width=True):
+            st.session_state.update({'posiciones': [], 'ordenes_malla': [], 'max_pnl_alcanzado': 0.0}); st.rerun()
+
+    # --- MOTOR PREDADOR ---
+    bot_on = st.toggle("🚀 ACTIVAR ALGORITMO PREDADOR")
+    if bot_on:
+        try:
+            res = requests.get(f"https://min-api.cryptocompare.com/data/price?fsym={par.split('/')[0]}&tsyms=USD").json()
+            precio_act = float(res['USD'])
+            st.session_state.precios_hist.append(precio_act)
+            if len(st.session_state.precios_hist) > 50: st.session_state.precios_hist.pop(0)
+            
+            rsi_val = calcular_rsi(st.session_state.precios_hist)
+            tendencia = obtener_tendencia(st.session_state.precios_hist)
+
+            # 1. ENTRADA (SOLO SI CERRÓ LA ANTERIOR)
+            if not st.session_state.ordenes_malla and not st.session_state.posiciones:
+                if (tendencia == "LONG" and rsi_val <= rsi_limite) or (tendencia == "SHORT" and rsi_val >= (100 - rsi_limite)):
+                    st.session_state.direccion = tendencia
+                    monto_nivel = inversion / niveles
+                    for i in range(niveles):
+                        factor = (1 - (i * distancia)) if st.session_state.direccion == "LONG" else (1 + (i * distancia))
+                        st.session_state.ordenes_malla.append({
+                            'id': i+1, 'precio': round(precio_act * factor, 4), 
+                            'monto': round(monto_nivel, 2), 'estado': 'PENDIENTE'
+                        })
+
+            # 2. EJECUCIÓN
+            for o in st.session_state.ordenes_malla:
+                if o['estado'] == 'PENDIENTE':
+                    hit = (st.session_state.direccion == "LONG" and precio_act <= o['precio']) or \
+                          (st.session_state.direccion == "SHORT" and precio_act >= o['precio'])
+                    if hit:
+                        st.session_state.saldo_demo -= o['monto']
+                        o['estado'] = 'EJECUTADA'
+                        st.session_state.posiciones.append({'entrada': precio_act, 'monto': o['monto']})
+
+            # 3. PROFIT DINÁMICO (TRAILING)
+            if st.session_state.posiciones:
+                t_inv = sum(p['monto'] for p in st.session_state.posiciones)
+                p_prom = sum(p['entrada'] for p in st.session_state.posiciones) / len(st.session_state.posiciones)
+                
+                pnl_actual = ((precio_act / p_prom - 1) if st.session_state.direccion == "LONG" else (1 - precio_act / p_prom)) * t_inv * lev
+
+                if pnl_actual >= (t_inv * tp_sensible * lev):
+                    if pnl_actual > st.session_state.max_pnl_alcanzado:
+                        st.session_state.max_pnl_alcanzado = pnl_actual
+                    
+                    # Si retrocede 3% desde el máximo de ganancia, cerramos (muy agresivo)
+                    if pnl_actual < (st.session_state.max_pnl_alcanzado * 0.97):
+                        st.session_state.historial_pnl.append({'Fecha': datetime.now().strftime("%H:%M:%S"), 'Tipo': st.session_state.direccion, 'Ganancia': round(pnl_actual, 4)})
+                        st.session_state.saldo_demo += (t_inv + pnl_actual)
+                        st.session_state.ganancia_total += pnl_actual
+                        st.session_state.update({'posiciones': [], 'ordenes_malla': [], 'max_pnl_alcanzado': 0.0})
+                        st.rerun()
+
+            # --- UI ---
+            c1, c2, c3 = st.columns(3)
+            c1.metric(f"Precio ({st.session_state.direccion})", f"${precio_act:,.4f}")
+            c2.metric("Wallet", f"${st.session_state.saldo_demo:,.2f}")
+            c3.metric("Cosecha Total", f"${st.session_state.ganancia_total:,.2f}", delta=f"RSI: {rsi_val:.1f}")
+
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(y=st.session_state.precios_hist, name="Precio", line=dict(color='#F0B90B', width=3)))
+            for o in st.session_state.ordenes_malla:
+                if o['estado'] == 'EJECUTADA':
+                    fig.add_hline(y=o['precio'], line_dash="solid", line_color="green")
+            fig.update_layout(height=400, template="plotly_dark", margin=dict(l=0,r=0,b=0,t=0))
+            st.plotly_chart(fig, use_container_width=True)
+
+            col_a, col_b = st.columns(2)
+            with col_a: st.subheader("📋 Malla"); st.dataframe(st.session_state.ordenes_malla, use_container_width=True)
+            with col_b: st.subheader("📜 Historial"); st.dataframe(st.session_state.historial_pnl[::-1], use_container_width=True)
+
+            time.sleep(1); st.rerun()
+        except: time.sleep(1); st.rerun()
+                        
