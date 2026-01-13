@@ -479,4 +479,42 @@ else:
                         opacity=0.3,
                     )
 
-            # RSI en eje secundario (us
+            # RSI en eje secundario (usando RSI que se utilizó en la lógica)
+            if st.session_state.rsi_hist:
+                fig.add_trace(go.Scatter(
+                    y=st.session_state.rsi_hist,
+                    name="RSI (uso)",
+                    line=dict(color='magenta', width=2, dash='dash'),
+                    yaxis="y2"
+                ))
+
+            fig.update_layout(
+                height=500,
+                template="plotly_dark",
+                margin=dict(l=0, r=0, b=0, t=10),
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                yaxis=dict(title="Precio"),
+                yaxis2=dict(
+                    title="RSI",
+                    overlaying="y",
+                    side="right",
+                    range=[0, 100],
+                    showgrid=False
+                )
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
+            st.subheader("📋 Malla de Operación")
+            st.dataframe(st.session_state.ordenes_malla, use_container_width=True)
+
+            st.subheader("📈 Historial de PNL por nivel / bloque")
+            if st.session_state.historial_pnl:
+                st.dataframe(st.session_state.historial_pnl, use_container_width=True)
+
+            time.sleep(delay)
+            st.rerun()
+
+        except Exception as e:
+            st.error(f"Error: {e}")
+            time.sleep(3)
+            st.rerun()
