@@ -327,34 +327,16 @@ else:
                 # Modo sniper: en lugar de solo tocar el precio de la malla,
                 # exigimos micro-pico: cambio fuerte reciente + RSI en zona.
                 def sniper_inteligente(dir_o, precio_act, precio_anterior, rsi_use, volatilidad):
-    # Micro-pico dinámico
-    micro_pico = abs(precio_act - precio_anterior) / precio_anterior
-
-    # Sensibilidad adaptativa
-    sensibilidad = max(0.001, volatilidad * 0.7)
-
-    # Zonas RSI más flexibles
-    rsi_alto = 80
-    rsi_bajo = 20
+    micro_pico = abs(precio_act - precio_anterior) / max(precio_anterior, 0.0001)
+    sensibilidad = max(0.0005, volatilidad * 0.6)
+    rsi_alto = 85
+    rsi_bajo = 15
 
     if dir_o == "LONG":
-        # LONG: queremos entrar en caídas rápidas pero no en sobrecompra extrema
         if rsi_use < rsi_alto and micro_pico >= sensibilidad:
             return True
-        else:
-            return False
-
-    else:  # SHORT
-        # SHORT: queremos entrar en subas rápidas pero no en sobreventa extrema
-        if rsi_use > rsi_bajo and micro_pico >= sensibilidad:
-            return True
-        else:
-            return False
-            if sniper_on:
-    sniper_ok = sniper_inteligente(dir_o, precio_act, precio_anterior, rsi_use, cambio_pct)
-    hit = hit_basico and sniper_ok
-else:
-    hit = hit_basico
+        return False
+    else:
                     # En modo tormenta, acortamos aún más el TP
                     tp_factor = tp_sensible * (0.7 if st.session_state.modo_tormenta_activo else 1.0)
 
