@@ -117,5 +117,7 @@ else:
             st.markdown("### 📜 Historial")
             if not st.session_state.historial:
                 st.session_state.historial = [{"Fecha": "00:19:15", "Tipo": "SHORT", "Ganancia": 0.0159}]
-            st.table(pd.DataFrame(st.session_state.
-        
+            st.table(pd.DataFrame(st.session_state.historial))
+
+        time.sleep(1)
+        st.rerun()
