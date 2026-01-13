@@ -205,7 +205,7 @@ if 'saldo_demo' not in st.session_state:
 
 c_h1, c_h2 = st.columns([4, 1])
 c_h1.markdown(f"## 👁️ H y G Inovaciones - "f"<span class='user-tag'>👤 {st.session_state_get('user_name, invitado')}"
-    unsafe_allow_html=True
+    unsafe_allow_html=True)
 c_h2.image(LOGO_URL, width=70)
 
 # ============================================================
