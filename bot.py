@@ -534,10 +534,13 @@ with c_info2:
     )
 
 # ============================================================
-# GRÁFICO
+# GRÁFICO + DEBUG
 # ============================================================
 
-if len(st.session_state.estado["precios"]) > 5:
+st.write("LEN PRECIOS:", len(st.session_state.estado["precios"]))
+st.write("PRECIOS:", st.session_state.estado["precios"][:10])  # primeros 10 valores
+
+if len(st.session_state.estado["precios"]) > 0:
     fig = go.Figure()
     fig.add_trace(go.Scatter(
         y=st.session_state.estado["precios"],
