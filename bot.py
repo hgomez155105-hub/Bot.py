@@ -288,7 +288,6 @@ volatilidad = 0.0
 # ============================================================
 # PRECIO SIEMPRE ACTUALIZADO — FUERA DEL IF
 # ============================================================
-
 try:
     r = requests.get(
         f"https://min-api.cryptocompare.com/data/price?fsym={par.split('/')[0]}&tsyms=USD"
@@ -298,12 +297,12 @@ try:
 except Exception as e:
     st.error(f"No se pudo obtener el precio: {e}")
     precio_actual = None
-    
+ 
 # Guardar precio SIEMPRE
 if precio_actual:
     st.session_state.estado["precios"].append(precio_actual)
     if len(st.session_state.estado["precios"]) > 500:
-        st.session_state.estado["precios"].pop(0)
+        st.session_state.estado["precios"].pop(0)   
         
 # ============================================================
 # MOTOR TÁCTICO — SOLO SI EL BOT ESTÁ ACTIVADO
