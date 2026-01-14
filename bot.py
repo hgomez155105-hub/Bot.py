@@ -259,6 +259,7 @@ else:
     if bot_on:
         try:
             # --- CONEXIÓN ---
+            st.write("Entorno seleccionado:", entorno)
             if entorno == "🟡 MODO REAL" and api_k and api_s:
                 exchange = conectar_pionex(api_k, api_s)
             else:
