@@ -283,20 +283,36 @@ rsi_use = 50
 tendencia = st.session_state.estado["direccion"]
 volatilidad = 0.0
 
-if bot_on:
-    # motor táctico
 # ============================================================
-# PRECIO SIEMPRE ACTUALIZADO
+# PRECIO SIEMPRE ACTUALIZADO — FUERA DEL IF
 # ============================================================
+
+precio_actual = None
 
 try:
     r = requests.get(
         f"https://min-api.cryptocompare.com/data/price?fsym={par.split('/')[0]}&tsyms=USD"
-    ).json()
-    precio_actual = float(r["USD"])
+    )
+    data = r.json()
+    precio_actual = float(data["USD"])
 except Exception as e:
     st.error(f"No se pudo obtener el precio: {e}")
     precio_actual = None
+
+# ============================================================
+# MOTOR TÁCTICO — SOLO SI EL BOT ESTÁ ACTIVADO
+# ============================================================
+
+if bot_on:
+    # TODO TU MOTOR TÁCTICO QUEDA IGUAL
+    # acá sigue tu lógica:
+    # - guardar precio en historial
+    # - calcular RSI
+    # - sniper / hedging / tormenta
+    # - abrir/cerrar niveles
+    # - actualizar PNL
+    # - etc.
+    pass
     
     # 2) VOLATILIDAD / TORMENTA
     precio_ant = st.session_state.estado["ultimo_precio"]
