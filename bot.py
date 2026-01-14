@@ -504,6 +504,6 @@ else:
 
                         st.session_state.saldo_demo += (monto + pnl_nivel_b)
                         st.session_state.ganancia_total += pnl_nivel_b
-                        st.session_state.historial_pnl.append({
+                        st.session_state.historial_pnl.append({)
                             'Fecha': datetime.now().strftime("%H:%M:%S"),
                             'Tipo': f"{dir_pos} - BLOQUE",
