@@ -142,7 +142,7 @@ else:
     # --- SIDEBAR ---
     with st.sidebar:
         st.image(LOGO_URL, width=100)
-        par = st.selectbox("🎯 Objetivo Pionex:", obtener_top_20_Pionex())
+        par = st.selectbox("🎯 Objetivo Pionex:", obtener_top_20_pionex())
 
         # RESET TÁCTICO AL CAMBIAR DE PAR
         if par != st.session_state.ultimo_par:
@@ -196,7 +196,7 @@ else:
         try:
             exchange = None
             if entorno == "🟡 MODO REAL" and api_k and api_s:
-                exchange = conectar_Pionex(api_k, api_s)
+                exchange = conectar_pionex(api_k, api_s)
 
             base_symbol = par.split('/')[0]
             res = requests.get(
