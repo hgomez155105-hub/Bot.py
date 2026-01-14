@@ -560,18 +560,20 @@ if precio_actual:
     if len(st.session_state.estado["precios"]) > 500:
         st.session_state.estado["precios"].pop(0)
 
-#============================================================
-# GRÁFICO PRECIO + RSI
+# ============================================================
+# GRÁFICO PRECIO + RSI TÁCTICO
 # ============================================================
 
 st.markdown("### 📈 Gráfico de Precio + RSI")
 
 precios = st.session_state.estado["precios"]
 rsi_hist = st.session_state.estado["rsi_hist"]
+posiciones = st.session_state.estado["posiciones"]
 
-if len(precios) > 0 and len(rsi_hist) > 0:
+if len(precios) > 1 and len(rsi_hist) > 1:
     fig = go.Figure()
 
+    # Precio
     fig.add_trace(go.Scatter(
         y=precios,
         mode="lines",
@@ -579,6 +581,7 @@ if len(precios) > 0 and len(rsi_hist) > 0:
         line=dict(color="yellow", width=2)
     ))
 
+    # RSI
     fig.add_trace(go.Scatter(
         y=rsi_hist,
         mode="lines",
@@ -587,16 +590,37 @@ if len(precios) > 0 and len(rsi_hist) > 0:
         line=dict(color="purple", width=1, dash="dot")
     ))
 
+    # Si hay al menos una posición, marcamos entrada y TP del último nivel
+    if posiciones:
+        ultima = posiciones[-1]
+        entrada = ultima["entrada"]
+        tp_precio = ultima["tp_precio"]
+
+        fig.add_hline(
+            y=entrada,
+            line=dict(color="cyan", width=1, dash="dash"),
+            annotation_text="Entrada",
+            annotation_position="top left"
+        )
+
+        fig.add_hline(
+            y=tp_precio,
+            line=dict(color="green", width=1, dash="dot"),
+            annotation_text="TP",
+            annotation_position="bottom left"
+        )
+
     fig.update_layout(
         yaxis=dict(title="Precio", side="left"),
         yaxis2=dict(title="RSI", overlaying="y", side="right", range=[0, 100]),
         margin=dict(l=40, r=40, t=20, b=20),
-        template="plotly_dark"
+        template="plotly_dark",
+        showlegend=True
     )
 
     st.plotly_chart(fig, use_container_width=True)
 else:
-    st.info("Esperando datos para mostrar el gráfico...")
+    st.info("Esperando datos suficientes para mostrar el gráfico táctico...")
 
 # ============================================================
 # TABLA DE MALLA
