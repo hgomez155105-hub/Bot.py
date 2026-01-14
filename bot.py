@@ -195,7 +195,7 @@ else:
     if bot_on:
         try:
             exchange = None
-            if entorno == "🟡 MODO REAL" and api_k and api_s:
+            if entorno == "0 MODO REAL" and api_k and api_s:
                 exchange = conectar_pionex(api_k, api_s)
 
             base_symbol = par.split('/')[0]
@@ -281,11 +281,14 @@ else:
                 delta=f"RSI: {rsi_val:.1f}",
                 delta_color="off"
             )
-            c2.metric(
-                "Wallet DEMO",
-                f"${st.session_state.saldo_demo:,.2f}",
-                delta=None
-            )
+            try:
+    balance = exchange.fetch_balance()
+    usdt_balance = balance['total']['USDT']
+    c2.metric("💰 Wallet REAL", f"${usdt_balance:,.2f}", delta=None)
+except Exception as e:
+    c2.metric("💰 Wallet REAL", "Error", delta=None)
+    st.warning("No se pudo obtener el saldo REAL. Verificá tus claves o conexión.")
+            
             c3.metric(
                 "PNL Total",
                 f"${st.session_state.ganancia_total:,.2f}",
