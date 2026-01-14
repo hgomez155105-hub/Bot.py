@@ -281,13 +281,13 @@ else:
                 delta=f"RSI: {rsi_val:.1f}",
                 delta_color="off"
             )
-            try:
-    			balance = exchange.fetch_balance()
-    			usdt_balance = balance['total']['USDT']
-    			c2.metric("💰 Wallet REAL", f"${usdt_balance:,.2f}", delta=None)
-			except Exception as e:
-    			c2.metric("💰 Wallet REAL", "Error", delta=None)
-    			st.warning("No se pudo obtener el saldo REAL. Verificá tus claves o conexión.")
+			try:
+    balance = exchange.fetch_balance()
+    usdt_balance = balance['total']['USDT']
+    c2.metric("💰 Wallet REAL", f"${usdt_balance:,.2f}", delta=None)
+except Exception as e:
+    c2.metric("💰 Wallet REAL", "Error", delta=None)
+    st.warning("No se pudo obtener el saldo REAL. Verificá tus claves o conexión.")
             
             c3.metric(
                 "PNL Total",
