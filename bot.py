@@ -255,7 +255,8 @@ with st.sidebar:
     sleep_rapido = st.slider("Delay rápido (seg)", 0.03, 0.5, 0.12)
     
     st.markdown("### 📡 Gráfico")
-grafico_tiempo_real = st.checkbox("Gráfico en tiempo real", False)
+    grafico_tiempo_real = st.checkbox("Gráfico en tiempo real", False)
+    
     st.markdown("---")
     if st.button("🚨 BOTÓN DE PÁNICO", use_container_width=True):
         st.session_state.estado["posiciones"] = []
