@@ -26,62 +26,61 @@ st.set_page_config(
 # ESTILO MILITAR
 # ============================================================
 
-st.markdown(f"""
+st.markdown("""
 <style>
-.stApp {{
+.stApp {
     background: radial-gradient(circle at top, #2d3a26, #0a0c08 55%) !important;
     color: white !important;
     font-family: monospace;
-}}
-[data-testid="stSidebar"] > div:first-child {{
+}
+[data-testid="stSidebar"] > div:first-child {
     background-color: #050605 !important;
     border-right: 1px solid #3a4a30;
-}}
-h1, h2, h3, h4, h5, h6, label, p, span {{
+}
+h1, h2, h3, h4, h5, h6, label, p, span {
     color: #f5f5f5 !important;
-}}
-.stMetric, [data-testid="stMetricValue"] {{
+}
+.stMetric, [data-testid="stMetricValue"] {
     color: #d7e5d0 !important;
-}}
-.stButton>button {{
+}
+.stButton>button {
     background-color: #3A4A2C !important;
     color: white !important;
     border-radius: 8px;
     border: 1px solid #7e9461;
     font-weight: bold;
-}}
-.stButton>button:hover {{
+}
+.stButton>button:hover {
     background-color: #556644 !important;
     border-color: #c1d38e;
-}}
-input, textarea {{
+}
+input, textarea {
     background-color: #0D0F0A !important;
     color: white !important;
     border-radius: 6px;
     border: 1px solid #3a4a30;
-}}
-/* Panel táctico */
-.t800-card {{
+}
+.t800-card {
     border-radius: 10px;
     padding: 12px 16px;
     background: linear-gradient(135deg, #11140f, #22291b);
     border: 1px solid #445338;
     box-shadow: 0 0 12px rgba(0,0,0,0.7);
-}}
-.t800-title {{
+}
+.t800-title {
     font-size: 1.1rem;
     color: #dfe9d7;
     border-bottom: 1px dashed #4e6140;
     padding-bottom: 4px;
     margin-bottom: 8px;
-}}
-.glow {{
+}
+.glow {
     animation: glowPulse 1.5s ease-in-out infinite alternate;
-}}
-@keyframes glowPulse {{
-    from {{ text-shadow: 0 0 4px #a3ff73; }}
-    to   {{ text-shadow: 0 0 12px #e4ff99; }}
-}}
+}
+@keyframes glowPulse {
+    from { text-shadow: 0 0 4px #a3ff73; }
+    to   { text-shadow: 0 0 12px #e4ff99; }
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -256,11 +255,17 @@ with st.sidebar:
     sleep_normal = st.slider("Delay normal (seg)", 0.2, 3.0, 0.7)
     sleep_rapido = st.slider("Delay rápido (seg)", 0.03, 0.5, 0.12)
 
+    st.markdown("---")
     if st.button("🚨 BOTÓN DE PÁNICO", use_container_width=True):
         st.session_state.estado["posiciones"] = []
         st.session_state.estado["ordenes_malla"] = []
         st.session_state.estado["modo_tormenta"] = False
         st.warning("Botón de pánico activado. Posiciones y mallas limpiadas.")
+        st.experimental_rerun()
+
+    st.markdown("---")
+    if st.button("🔒 Cerrar sesión", use_container_width=True):
+        st.session_state.autenticado = False
         st.experimental_rerun()
 
 # ============================================================
@@ -342,11 +347,9 @@ if bot_on:
             })
 
     if hedging:
-        # Aseguramos al menos malla en la tendencia actual
         if tendencia not in dirs_existentes:
             crear_malla(tendencia)
     else:
-        # Sin hedging: solo malla en la dirección actual
         ordenes[:] = [o for o in ordenes if o["dir"] == tendencia]
         if tendencia not in dirs_existentes:
             crear_malla(tendencia)
@@ -492,7 +495,6 @@ if bot_on:
 col_m1, col_m2, col_m3 = st.columns(3)
 saldo = st.session_state.estado["saldo_demo"]
 gan_total = st.session_state.estado["ganancia_total"]
-pnl_color = "normal" if gan_total >= 0 else "inverse"
 
 with col_m1:
     st.metric("Wallet DEMO", f"${saldo:,.2f}")
