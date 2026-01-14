@@ -58,20 +58,22 @@ st.markdown("""
 LOGO_URL = "https://raw.githubusercontent.com/hgomez155105-hub/Bot.py/main/1000266017.png"
 
 # --- FUNCIONES TÉCNICAS ---
-def conectar_binance(api_key, secret_key):
+def conectar_pionex(api_key, secret_key):
     try:
-        exchange = ccxt.binance({
+        exchange = ccxt.pionex({
             'apiKey': api_key,
             'secret': secret_key,
-            'enableRateLimit': True,
-            'options': {'defaultType': 'future'}
+            'enableRateLimit': True
         })
         return exchange
     except:
         return None
 
-def obtener_top_20_binance():
+
+def obtener_top_20_pionex():
     try:
+        # Pionex no ofrece un endpoint público de volumen,
+        # así que usamos el de Binance solo para obtener los pares más operados.
         url = "https://api.binance.com/api/v3/ticker/24hr"
         res = requests.get(url).json()
         df_vol = pd.DataFrame(res)
