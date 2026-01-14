@@ -12,7 +12,7 @@ import ccxt
 # ============================================================
 
 LOGO_URL = "https://i.imgur.com/7ZkEw2k.png"
-TELEGRAM_URL = "https://t.me/TU_TELEGRAM"   # <-- cambiá por tu enlace real
+TELEGRAM_URL = "https://t.me/TU_TELEGRAM"
 
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1nYyINRPF-cIiAMsKInTxaO6wdptsitVfZnFq-o1Wo1Y/export?format=csv"
 
@@ -138,14 +138,14 @@ if "estado" not in st.session_state:
     st.session_state.estado = {
         "saldo_demo": 1000.0,
         "ganancia_total": 0.0,
-        "posiciones": [],        # {id_orden, entrada, monto, tp_precio, dir}
-        "ordenes_malla": [],     # {id, precio, monto, estado, dir}
+        "posiciones": [],
+        "ordenes_malla": [],
         "precios": [],
         "rsi_hist": [],
         "ultimo_precio": None,
         "direccion": "LONG",
         "modo_tormenta": False,
-        "historial_pnl": []      # {Fecha, Tipo, Ganancia}
+        "historial_pnl": []
     }
 
 # ============================================================
@@ -198,7 +198,6 @@ def sniper_disparo(dir_o, precio_act, precio_ant, rsi_use, volatilidad):
         return (rsi_use < rsi_alto) and (micro_pico >= sensibilidad)
     else:
         return (rsi_use > rsi_bajo) and (micro_pico >= sensibilidad)
-
 # ============================================================
 # HEADER
 # ============================================================
@@ -287,8 +286,6 @@ volatilidad = 0.0
 # PRECIO SIEMPRE ACTUALIZADO — FUERA DEL IF
 # ============================================================
 
-precio_actual = None
-
 try:
     r = requests.get(
         f"https://min-api.cryptocompare.com/data/price?fsym={par.split('/')[0]}&tsyms=USD"
@@ -304,16 +301,14 @@ except Exception as e:
 # ============================================================
 
 if bot_on:
-    # TODO TU MOTOR TÁCTICO QUEDA IGUAL
-    # acá sigue tu lógica:
-    # - guardar precio en historial
-    # - calcular RSI
-    # - sniper / hedging / tormenta
-    # - abrir/cerrar niveles
-    # - actualizar PNL
-    # - etc.
-    pass
-    
+
+    # Guardar precio en historial (CORRECCIÓN CLAVE)
+    st.session_state.estado["precios"].append(precio_actual)
+    if len(st.session_state.estado["precios"]) > 500:
+        st.session_state.estado["precios"].pop(0)
+
+    precios = st.session_state.estado["precios"]
+
     # 2) VOLATILIDAD / TORMENTA
     precio_ant = st.session_state.estado["ultimo_precio"]
     st.session_state.estado["ultimo_precio"] = precio_actual
@@ -330,7 +325,7 @@ if bot_on:
         st.session_state.estado["modo_tormenta"] = False
         delay = sleep_normal
 
-    # 3) RSI Y TENDENCIA
+    # 3) RSI Y TENDENCIA (CORREGIDO)
     rsi_real = calcular_rsi(precios)
     rsi_use = rsi_manual if rsi_manual != 0 else rsi_real
 
@@ -341,7 +336,6 @@ if bot_on:
 
     tendencia = obtener_tendencia(precios, rsi_use)
     st.session_state.estado["direccion"] = tendencia
-
     # 4) ARMADO/ACTUALIZACIÓN DE MALLAS
     ordenes = st.session_state.estado["ordenes_malla"]
     dirs_existentes = {o["dir"] for o in ordenes} if ordenes else set()
@@ -578,15 +572,21 @@ if len(st.session_state.estado["precios"]) > 1 and len(st.session_state.estado["
     )
 
     st.plotly_chart(fig, use_container_width=True)
+
+# ============================================================
+# TABLA DE MALLA
+# ============================================================
+
 if st.session_state.estado["ordenes_malla"]:
     st.markdown("### 🧱 Malla de Operación")
     df_malla = pd.DataFrame(st.session_state.estado["ordenes_malla"])
     st.dataframe(df_malla.tail(20), use_container_width=True)
+
 # ============================================================
 # HISTORIAL PNL
 # ============================================================
 
 if st.session_state.estado["historial_pnl"]:
-    st.markdown("### 📜 Historial de ejecuciones")
+    st.markdown("### 📜 Historial de PNL")
     df_hist = pd.DataFrame(st.session_state.estado["historial_pnl"])
-    st.dataframe(df_hist.tail(50), use_container_width=True)
+    st.dataframe(df_hist.tail(30), use_container_width=True)
