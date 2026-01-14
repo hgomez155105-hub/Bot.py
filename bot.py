@@ -41,11 +41,11 @@ st.set_page_config(
 st.markdown(f"""
 <style>
 .stApp {{
-    background-color: #F2E3C6 !important; /* Arena militar */
+    background-color: #F2E3C6 !important;
     color: #111111 !important;
 }}
 h1, h2, h3, h4, h5, h6 {{
-    color: #3E4F1F !important; /* Verde oliva cazador */
+    color: #3E4F1F !important;
     font-weight: 800 !important;
 }}
 section[data-testid="stSidebar"] {{
@@ -64,12 +64,9 @@ section[data-testid="stSidebar"] {{
     font-size: 1.8rem !important;
     font-weight: 900 !important;
 }}
-[data-testid="stMetricDelta"] {{
-    color: #8B0000 !important;
-}}
 .stDataFrame, .stTable {{
-    background-color: #FFF !important;
-    color: #111 !important;
+    background-color: #FFFFFF !important;
+    color: #111111 !important;
 }}
 </style>
 <div style='text-align: center; margin-top: -30px;'>
@@ -97,7 +94,6 @@ def conectar_pionex(api_key, secret_key):
 
 def obtener_top_20_pionex():
     try:
-        # Usamos Binance solo para ranking de volumen, pero operamos en Pionex
         url = "https://api.binance.com/api/v3/ticker/24hr"
         res = requests.get(url).json()
         df_vol = pd.DataFrame(res)
@@ -161,16 +157,16 @@ else:
         st.session_state.update({
             'saldo_demo': 1000.0,
             'ganancia_total': 0.0,
-            'posiciones': [],          # posiciones abiertas
+            'posiciones': [],
             'precios_hist': [],
-            'ordenes_malla': [],       # niveles de malla
+            'ordenes_malla': [],
             'ultimo_par': "",
             'historial_pnl': [],
             'direccion': 'LONG',
             'ultimo_precio': None,
             'rsi_hist': [],
             'modo_tormenta_activo': False,
-            'eventos': []              # aperturas/cierres para el gráfico
+            'eventos': []
         })
 
     # ============================
@@ -258,9 +254,9 @@ else:
 
     if bot_on:
         try:
-            # --- CONEXIÓN ---
-            st.write("Entorno seleccionado:", entorno)
-            if entorno == "🟡 MODO REAL" and api_k and api_s:
+            # --- DETECCIÓN MODO REAL ROBUSTA ---
+            modo_real = "REAL" in entorno.upper()
+            if modo_real and api_k and api_s:
                 exchange = conectar_pionex(api_k, api_s)
             else:
                 exchange = None
