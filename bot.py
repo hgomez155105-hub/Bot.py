@@ -534,13 +534,10 @@ with c_info2:
     )
 
 # ============================================================
-# GRÁFICO + DEBUG
+# GRÁFICO + INFO TÁCTICA + CIERRES
 # ============================================================
 
-st.write("LEN PRECIOS:", len(st.session_state.estado["precios"]))
-st.write("PRECIOS:", st.session_state.estado["precios"][:10])  # primeros 10 valores
-
-if len(st.session_state.estado["precios"]) > 0:
+if len(st.session_state.estado["precios"]) > 1:
     fig = go.Figure()
     fig.add_trace(go.Scatter(
         y=st.session_state.estado["precios"],
@@ -550,6 +547,30 @@ if len(st.session_state.estado["precios"]) > 0:
     ))
     st.plotly_chart(fig, use_container_width=True)
 
+    st.markdown("### 📡 Información táctica")
+    st.write(f"🔁 RSI usado: {rsi_use:.2f}")
+    st.write(f"🎯 Dirección táctica: {tendencia}")
+    st.write(f"📈 Precio actual: ${precio_actual:.2f}")
+    st.write(f"🎯 TP por nivel: {tp * 100:.2f}%")
+    st.write(f"🌩️ Modo tormenta: {'ACTIVO' if st.session_state.estado['modo_tormenta'] else 'inactivo'}")
+
+    if st.session_state.estado["posiciones"]:
+        st.markdown("### 🧱 Niveles abiertos")
+        for pos in st.session_state.estado["posiciones"]:
+            st.write(
+                f"🟢 Nivel {pos['id_orden']} | Dir: {pos['dir']} | Entrada: {pos['entrada']:.2f} | "
+                f"TP: {pos['tp_precio']:.2f} | Monto: {pos['monto']} USDT"
+            )
+    else:
+        st.info("No hay niveles abiertos actualmente.")
+
+    if st.session_state.estado["historial_pnl"]:
+        st.markdown("### 📜 Últimos cierres tácticos")
+        ultimos = st.session_state.estado["historial_pnl"][-5:]
+        for h in reversed(ultimos):
+            st.write(
+                f"✅ {h['Fecha']} | {h['Tipo']} | Ganancia: ${h['Ganancia']:.2f}"
+            )
 # ============================================================
 # HISTORIAL PNL
 # ============================================================
