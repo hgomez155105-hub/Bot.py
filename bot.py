@@ -534,43 +534,39 @@ with c_info2:
     )
 
 # ============================================================
-# GRÁFICO + INFO TÁCTICA + CIERRES
+# GRÁFICO PRECIO + RSI
 # ============================================================
 
-if len(st.session_state.estado["precios"]) > 1:
+if len(st.session_state.estado["precios"]) > 1 and len(st.session_state.estado["rsi_hist"]) > 1:
     fig = go.Figure()
+
     fig.add_trace(go.Scatter(
         y=st.session_state.estado["precios"],
         mode="lines",
-        line=dict(color="#9FB89F", width=2),
-        name="Precio"
+        name="Precio",
+        line=dict(color="yellow", width=2)
     ))
+
+    fig.add_trace(go.Scatter(
+        y=st.session_state.estado["rsi_hist"],
+        mode="lines",
+        name="RSI",
+        yaxis="y2",
+        line=dict(color="purple", width=1, dash="dot")
+    ))
+
+    fig.update_layout(
+        yaxis=dict(title="Precio", side="left"),
+        yaxis2=dict(title="RSI", overlaying="y", side="right", range=[0, 100]),
+        margin=dict(l=40, r=40, t=20, b=20),
+        template="plotly_dark"
+    )
+
     st.plotly_chart(fig, use_container_width=True)
-
-    st.markdown("### 📡 Información táctica")
-    st.write(f"🔁 RSI usado: {rsi_use:.2f}")
-    st.write(f"🎯 Dirección táctica: {tendencia}")
-    st.write(f"📈 Precio actual: ${precio_actual:.2f}")
-    st.write(f"🎯 TP por nivel: {tp * 100:.2f}%")
-    st.write(f"🌩️ Modo tormenta: {'ACTIVO' if st.session_state.estado['modo_tormenta'] else 'inactivo'}")
-
-    if st.session_state.estado["posiciones"]:
-        st.markdown("### 🧱 Niveles abiertos")
-        for pos in st.session_state.estado["posiciones"]:
-            st.write(
-                f"🟢 Nivel {pos['id_orden']} | Dir: {pos['dir']} | Entrada: {pos['entrada']:.2f} | "
-                f"TP: {pos['tp_precio']:.2f} | Monto: {pos['monto']} USDT"
-            )
-    else:
-        st.info("No hay niveles abiertos actualmente.")
-
-    if st.session_state.estado["historial_pnl"]:
-        st.markdown("### 📜 Últimos cierres tácticos")
-        ultimos = st.session_state.estado["historial_pnl"][-5:]
-        for h in reversed(ultimos):
-            st.write(
-                f"✅ {h['Fecha']} | {h['Tipo']} | Ganancia: ${h['Ganancia']:.2f}"
-            )
+if st.session_state.estado["ordenes_malla"]:
+    st.markdown("### 🧱 Malla de Operación")
+    df_malla = pd.DataFrame(st.session_state.estado["ordenes_malla"])
+    st.dataframe(df_malla.tail(20), use_container_width=True)
 # ============================================================
 # HISTORIAL PNL
 # ============================================================
