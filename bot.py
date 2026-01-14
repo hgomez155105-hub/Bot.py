@@ -253,11 +253,10 @@ with st.sidebar:
     salto_rapido = st.slider("Salto precio modo rápido (%)", 0.1, 2.0, 0.5, format="%.2f") / 100
     sleep_normal = st.slider("Delay normal (seg)", 0.2, 3.0, 0.7)
     sleep_rapido = st.slider("Delay rápido (seg)", 0.03, 0.5, 0.12)
-
-st.markdown("### 📡 Gráfico")
-grafico_tiempo_real = st.checkbox("Gráfico en tiempo real", False)
     
-st.markdown("---")
+    st.markdown("### 📡 Gráfico")
+grafico_tiempo_real = st.checkbox("Gráfico en tiempo real", False)
+    st.markdown("---")
     if st.button("🚨 BOTÓN DE PÁNICO", use_container_width=True):
         st.session_state.estado["posiciones"] = []
         st.session_state.estado["ordenes_malla"] = []
