@@ -11,7 +11,7 @@ import ccxt
 # CONFIGURACIÓN GLOBAL (solo una vez)
 # ============================================================
 
-LOGO_URL = "https://raw.githubusercontent.com/hgomez155105-hub/Bot.py/main/1000266017.png"
+LOGO_URL = "https://raw.githubusercontent.com/hgomez155/Bot.py/main/pngwing.com.png"
 
 st.set_page_config(
     page_title="H y G Inovaciones – Admin",
