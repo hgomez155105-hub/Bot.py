@@ -8,7 +8,7 @@ from datetime import datetime
 import ccxt  # Librería para conectar con Binance
 
 # --- CONFIGURACIÓN ---
-st.set_page_config(page_title="H y G Inovaciones", layout="wide", page_icon="👁️")
+st.set_page_config(page_title="BOT T800", layout="wide", page_icon="🤖")
 
 # --- ESTILO VISUAL ---
 st.markdown("""
@@ -74,7 +74,7 @@ if not st.session_state.autenticado:
     col1, col2, col3 = st.columns([1, 1.5, 1])
     with col2:
         st.image(LOGO_URL, width=200)
-        st.markdown("<h2 style='text-align: center;'>H y G Inovaciones</h2>", unsafe_allow_html=True)
+        st.markdown("<h2 style='text-align: center;'>BOT T800</h2>", unsafe_allow_html=True)
         u = st.text_input("Usuario")
         p = st.text_input("Contraseña", type="password")
         if st.button("ACCEDER AL SISTEMA", use_container_width=True):
@@ -97,7 +97,7 @@ else:
     # --- HEADER ---
     c_h1, c_h2 = st.columns([4, 1])
     c_h1.markdown(
-        f"## 👁️ H y G Inovaciones - <span class='user-tag'>👤 {st.session_state.user_name}</span>",
+        f"## 🤖 BOT T800 - <span class='user-tag'>👤 {st.session_state.user_name}</span>",
         unsafe_allow_html=True
     )
     c_h2.image(LOGO_URL, width=70)
@@ -122,12 +122,18 @@ else:
         api_s = st.text_input("Secret Key", type="password")
 
         st.divider()
-        st.subheader("⚙️ Configuración")
+        st.subheader("⚙️ Configuración base")
         lev = st.slider("Apalancamiento", 1, 50, 20)
         niveles = st.number_input("Cantidad de Niveles", 1, 50, 10)
         distancia = st.slider("Distancia Malla (%)", 0.01, 1.0, 0.2) / 100
         inversion = st.number_input("Inversión Total (USDT)", 10.0, 10000.0, 100.0)
-        tp_sensible = st.slider("Profit Objetivo (%)", 0.005, 1.0, 0.1, format="%.3f") / 100
+        tp_sensible = st.slider("Profit Objetivo base (%)", 0.005, 1.0, 0.1, format="%.3f") / 100
+
+        st.subheader("🧠 Modos tácticos T800")
+        sniper = st.checkbox("🎯 Modo Sniper (scalp agresivo)", True)
+        hedging = st.checkbox("🌀 Hedging dinámico", True)
+        tormenta = st.checkbox("🌩️ Modo Tormenta (alta volatilidad)", True)
+        cierre_bloque = st.checkbox("🧱 Cierre por bloque si PnL total > 0", False)
 
         if st.button("🚨 BOTÓN DE PÁNICO", use_container_width=True):
             st.session_state.posiciones = []
@@ -135,7 +141,18 @@ else:
             st.session_state.max_pnl_alcanzado = 0.0
             st.rerun()
 
-    # --- MOTOR T800 (ESTILO PREDADOR EN EL LOOP Y GRÁFICO) ---
+    # --- AJUSTES SEGÚN MODOS ---
+    tp_objetivo = tp_sensible
+    distancia_malla = distancia
+    sleep_time = 1.0
+
+    if sniper:
+        tp_objetivo = tp_sensible * 0.5  # toma ganancias más chicas, más seguido
+    if tormenta:
+        distancia_malla = distancia * 0.7  # malla más apretada
+        sleep_time = 0.7  # responde más rápido
+
+    # --- MOTOR T800 ---
     bot_on = st.toggle("🚀 ACTIVAR BOT T800")
 
     if bot_on:
@@ -152,22 +169,22 @@ else:
             ).json()
             precio_act = float(res['USD'])
 
-            # HISTORIAL DE PRECIOS AL ESTILO PREDADOR
+            # HISTORIAL DE PRECIOS (GRÁFICO + RSI)
             st.session_state.precios_hist.append(precio_act)
             if len(st.session_state.precios_hist) > 200:
                 st.session_state.precios_hist.pop(0)
 
-            # RSI + TENDENCIA
+            # RSI + TENDENCIA (AUTO-DIRECCIÓN)
             rsi_val = calcular_rsi(st.session_state.precios_hist)
             tendencia = obtener_tendencia(st.session_state.precios_hist)
+            st.session_state.direccion = tendencia  # siempre se auto-orienta LONG/SHORT
 
-            # 1. ENTRADA EN MALLA (T800)
+            # 1. ENTRADA EN MALLA (T800 AGRESIVO)
             if not st.session_state.ordenes_malla and not st.session_state.posiciones:
-                if (tendencia == "LONG" and rsi_val <= 50) or (tendencia == "SHORT" and rsi_val >= 50):
-                    st.session_state.direccion = tendencia
+                if (tendencia == "LONG" and rsi_val <= 55) or (tendencia == "SHORT" and rsi_val >= 45):
                     monto_nivel = inversion / niveles
                     for i in range(niveles):
-                        factor = (1 - (i * distancia)) if st.session_state.direccion == "LONG" else (1 + (i * distancia))
+                        factor = (1 - (i * distancia_malla)) if st.session_state.direccion == "LONG" else (1 + (i * distancia_malla))
                         st.session_state.ordenes_malla.append({
                             'id': i + 1,
                             'precio': round(precio_act * factor, 4),
@@ -189,7 +206,8 @@ else:
                         o['estado'] = 'EJECUTADA'
                         st.session_state.posiciones.append({'entrada': precio_act, 'monto': o['monto']})
 
-            # 3. CIERRE CON TRAILING PROFIT
+            # 3. CIERRE CON TRAILING PROFIT (SIEMPRE EN GANANCIA)
+            pnl_actual = 0
             if st.session_state.posiciones:
                 t_inv = sum(p['monto'] for p in st.session_state.posiciones)
                 p_prom = sum(p['entrada'] for p in st.session_state.posiciones) / len(st.session_state.posiciones)
@@ -198,11 +216,13 @@ else:
                 else:
                     pnl_actual = (1 - precio_act / p_prom) * t_inv * lev
 
-                if pnl_actual >= (t_inv * tp_sensible * lev):
+                # Objetivo agresivo
+                if pnl_actual >= (t_inv * tp_objetivo * lev):
                     if pnl_actual > st.session_state.max_pnl_alcanzado:
                         st.session_state.max_pnl_alcanzado = pnl_actual
 
-                    if pnl_actual < (st.session_state.max_pnl_alcanzado * 0.98):  # Cierre al retroceder 2%
+                    # Trailing: si retrocede 2% desde el máximo, cierra
+                    if pnl_actual < (st.session_state.max_pnl_alcanzado * 0.98):
                         if exchange:  # Cierre en REAL
                             side = 'sell' if st.session_state.direccion == "LONG" else 'buy'
                             exchange.create_market_order(par, side, t_inv / precio_act)
@@ -219,13 +239,49 @@ else:
                         st.session_state.max_pnl_alcanzado = 0.0
                         st.rerun()
 
+            # 4. HEDGING DINÁMICO (CAMBIO DE DIRECCIÓN EN PERDIDA CONTROLADA)
+            if hedging and st.session_state.posiciones and pnl_actual < 0:
+                # Si RSI se da vuelta fuerte contra la posición, resetea y cambia de lado
+                if (st.session_state.direccion == "LONG" and rsi_val < 40) or \
+                   (st.session_state.direccion == "SHORT" and rsi_val > 60):
+                    st.session_state.posiciones = []
+                    st.session_state.ordenes_malla = []
+                    st.session_state.max_pnl_alcanzado = 0.0
+                    st.session_state.direccion = "SHORT" if st.session_state.direccion == "LONG" else "LONG"
+
+            # 5. CIERRE POR BLOQUE (GANANCIA TOTAL POSITIVA)
+            if cierre_bloque and st.session_state.ganancia_total > 0 and st.session_state.posiciones:
+                t_inv = sum(p['monto'] for p in st.session_state.posiciones)
+                p_prom = sum(p['entrada'] for p in st.session_state.posiciones) / len(st.session_state.posiciones)
+                if st.session_state.direccion == "LONG":
+                    pnl_actual = (precio_act / p_prom - 1) * t_inv * lev
+                else:
+                    pnl_actual = (1 - precio_act / p_prom) * t_inv * lev
+
+                if pnl_actual > 0:
+                    if exchange:
+                        side = 'sell' if st.session_state.direccion == "LONG" else 'buy'
+                        exchange.create_market_order(par, side, t_inv / precio_act)
+
+                    st.session_state.historial_pnl.append({
+                        'Fecha': datetime.now().strftime("%H:%M:%S"),
+                        'Tipo': st.session_state.direccion,
+                        'Ganancia': round(pnl_actual, 4)
+                    })
+                    st.session_state.saldo_demo += (t_inv + pnl_actual)
+                    st.session_state.ganancia_total += pnl_actual
+                    st.session_state.posiciones = []
+                    st.session_state.ordenes_malla = []
+                    st.session_state.max_pnl_alcanzado = 0.0
+                    st.rerun()
+
             # --- UI MÉTRICAS ---
             c1, c2, c3 = st.columns(3)
             c1.metric(f"Precio ({st.session_state.direccion})", f"${precio_act:,.4f}")
-            c2.metric("Wallet Balance", f"${st.session_state.saldo_demo:,.2f}")
+            c2.metric("Wallet DEMO", f"${st.session_state.saldo_demo:,.2f}")
             c3.metric("PNL Total", f"${st.session_state.ganancia_total:,.2f}", delta=f"RSI: {rsi_val:.1f}")
 
-            # --- GRÁFICO VIVO PRECIO + RSI (ESTILO PREDADOR) ---
+            # --- GRÁFICO VIVO PRECIO + RSI ---
             st.markdown("### 📈 Gráfico de Precio + RSI")
 
             precios = st.session_state.precios_hist
@@ -238,9 +294,10 @@ else:
                     mode="lines",
                     line=dict(color="#F0B90B", width=3)
                 ))
-                # RSI (escalado a eje derecho)
+                # RSI (recalculado incremental)
+                rsi_series = [calcular_rsi(precios[:i]) for i in range(2, len(precios) + 1)]
                 fig.add_trace(go.Scatter(
-                    y=[calcular_rsi(precios[:i]) for i in range(2, len(precios) + 1)],
+                    y=rsi_series,
                     name="RSI",
                     mode="lines",
                     yaxis="y2",
@@ -274,8 +331,8 @@ else:
             else:
                 st.write("Sin operaciones cerradas aún.")
 
-            # LOOP REAL-TIME AL ESTILO PREDADOR
-            time.sleep(1)
+            # LOOP REAL-TIME
+            time.sleep(sleep_time)
             st.rerun()
 
         except Exception as e:
@@ -283,5 +340,4 @@ else:
             time.sleep(5)
             st.rerun()
     else:
-        # Bot apagado: solo UI estática
         st.info("Bot T800 apagado. Activá el algoritmo para iniciar el escaneo táctico.")
