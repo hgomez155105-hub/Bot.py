@@ -268,28 +268,29 @@ else:
                         st.session_state.ordenes_malla = []
                         st.session_state.max_pnl_alcanzado = 0.0
                         st.rerun() 
-                        # --- MÉTRICAS ---
-c1, c2, c3 = st.columns(3)
+								# --- MÉTRICAS ---
+								c1, c2, c3 = st.columns(3)
 
-delta_color = "normal" if pnl_actual >= 0 else "inverse"
+          						delta_color = "normal" if pnl_actual >= 0 else "inverse"
 
-c1.metric(
-    f"Precio ({tendencia})",
-    f"${precio_act:,.4f}",
-    delta=f"RSI: {rsi_val:.1f}",
-    delta_color="off"
-)
-c2.metric(
-    "Wallet DEMO",
-    f"${st.session_state.saldo_demo:,.2f}",
-    delta=None
-)
-c3.metric(
-    "PNL Total",
-    f"${st.session_state.ganancia_total:,.2f}",
-    delta=f"{pnl_actual:.2f}",
-    delta_color=delta_color
-)
+            					c1.metric(
+					                f"Precio ({tendencia})",
+					                f"${precio_act:,.4f}",
+					                delta=f"RSI: {rsi_val:.1f}",
+					                delta_color="off"
+					            )
+					            c2.metric(
+					                "Wallet DEMO",
+					                f"${st.session_state.saldo_demo:,.2f}",
+					                delta=None
+					            )
+					            c3.metric(
+					                "PNL Total",
+					                f"${st.session_state.ganancia_total:,.2f}",
+					                delta=f"{pnl_actual:.2f}",
+					                delta_color=delta_color
+					            )
+
             # ============================================================
             # GRÁFICO TÁCTICO T800: PRECIO + RSI + NIVELES + TP + EJECUCIONES
             # ============================================================
