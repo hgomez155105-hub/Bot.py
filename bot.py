@@ -10,15 +10,50 @@ import ccxt  # Librería para conectar con Binance
 # --- CONFIGURACIÓN ---
 st.set_page_config(page_title="BOT T800", layout="wide", page_icon="🤖")
 
-# --- ESTILO VISUAL ---
+# --- ESTILO MILITAR ---
 st.markdown("""
     <style>
-    .stApp { background-color: #0B0E11 !important; }
-    .user-tag { background: #1E2329; padding: 5px 15px; border-radius: 20px; border: 1px solid #F0B90B; color: white; }
-    [data-testid="stMetricValue"] { color: #F0B90B !important; font-size: 1.8rem !important; }
-    h1, h2, h3 { color: white !important; }
+    .stApp { background-color: #000000 !important; }
+
+    /* Títulos */
+    h1, h2, h3, h4, h5, h6 {
+        color: #6B8E23 !important;
+        font-weight: 700 !important;
+    }
+
+    /* Sidebar */
+    section[data-testid="stSidebar"] {
+        background-color: #000000 !important;
+    }
+
+    /* Botones */
+    button[kind="primary"] {
+        background-color: #000000 !important;
+        color: #6B8E23 !important;
+        border: 1px solid #6B8E23 !important;
+        font-weight: 700 !important;
+    }
+
+    /* Inputs y selectores */
+    .stSelectbox, .stTextInput, .stNumberInput, .stSlider {
+        color: white !important;
+    }
+
+    /* Métricas */
+    [data-testid="stMetricValue"] {
+        color: #6B8E23 !important;
+        font-size: 1.8rem !important;
+        font-weight: 700 !important;
+    }
+
+    /* Tablas */
+    .stDataFrame, .stTable {
+        color: white !important;
+        background-color: #000000 !important;
+    }
+
     </style>
-    """, unsafe_allow_html=True)
+""", unsafe_allow_html=True)
 
 LOGO_URL = "https://raw.githubusercontent.com/hgomez155105-hub/Bot.py/main/1000266017.png"
 
@@ -29,7 +64,7 @@ def conectar_binance(api_key, secret_key):
             'apiKey': api_key,
             'secret': secret_key,
             'enableRateLimit': True,
-            'options': {'defaultType': 'future'}  # Cambiar a 'spot' si no usas futuros
+            'options': {'defaultType': 'future'}
         })
         return exchange
     except:
@@ -147,44 +182,40 @@ else:
     sleep_time = 1.0
 
     if sniper:
-        tp_objetivo = tp_sensible * 0.5  # toma ganancias más chicas, más seguido
+        tp_objetivo = tp_sensible * 0.5
     if tormenta:
-        distancia_malla = distancia * 0.7  # malla más apretada
-        sleep_time = 0.7  # responde más rápido
+        distancia_malla = distancia * 0.7
+        sleep_time = 0.7
 
     # --- MOTOR T800 ---
     bot_on = st.toggle("🚀 ACTIVAR BOT T800")
 
     if bot_on:
         try:
-            # Conexión Real si aplica
             exchange = None
             if entorno == "🟡 MODO REAL" and api_k and api_s:
                 exchange = conectar_binance(api_k, api_s)
 
-            # PRECIO ACTUAL
             base_symbol = par.split('/')[0]
             res = requests.get(
                 f"https://min-api.cryptocompare.com/data/price?fsym={base_symbol}&tsyms=USD"
             ).json()
             precio_act = float(res['USD'])
 
-            # HISTORIAL DE PRECIOS (GRÁFICO + RSI)
             st.session_state.precios_hist.append(precio_act)
             if len(st.session_state.precios_hist) > 200:
                 st.session_state.precios_hist.pop(0)
 
-            # RSI + TENDENCIA (AUTO-DIRECCIÓN)
             rsi_val = calcular_rsi(st.session_state.precios_hist)
             tendencia = obtener_tendencia(st.session_state.precios_hist)
-            st.session_state.direccion = tendencia  # siempre se auto-orienta LONG/SHORT
+            st.session_state.direccion = tendencia
 
-            # 1. ENTRADA EN MALLA (T800 AGRESIVO)
+            # 1. ENTRADA EN MALLA
             if not st.session_state.ordenes_malla and not st.session_state.posiciones:
                 if (tendencia == "LONG" and rsi_val <= 55) or (tendencia == "SHORT" and rsi_val >= 45):
                     monto_nivel = inversion / niveles
                     for i in range(niveles):
-                        factor = (1 - (i * distancia_malla)) if st.session_state.direccion == "LONG" else (1 + (i * distancia_malla))
+                        factor = (1 - (i * distancia_malla)) if tendencia == "LONG" else (1 + (i * distancia_malla))
                         st.session_state.ordenes_malla.append({
                             'id': i + 1,
                             'precio': round(precio_act * factor, 4),
@@ -192,44 +223,43 @@ else:
                             'estado': 'PENDIENTE'
                         })
 
-            # 2. EJECUCIÓN (REAL O DEMO)
+            # 2. EJECUCIÓN
             for o in st.session_state.ordenes_malla:
                 if o['estado'] == 'PENDIENTE':
-                    hit = (st.session_state.direccion == "LONG" and precio_act <= o['precio']) or \
-                          (st.session_state.direccion == "SHORT" and precio_act >= o['precio'])
+                    hit = (tendencia == "LONG" and precio_act <= o['precio']) or \
+                          (tendencia == "SHORT" and precio_act >= o['precio'])
                     if hit:
-                        if exchange:  # Si es REAL
-                            side = 'buy' if st.session_state.direccion == "LONG" else 'sell'
+                        if exchange:
+                            side = 'buy' if tendencia == "LONG" else 'sell'
                             exchange.create_market_order(par, side, o['monto'] / precio_act)
 
                         st.session_state.saldo_demo -= o['monto']
                         o['estado'] = 'EJECUTADA'
                         st.session_state.posiciones.append({'entrada': precio_act, 'monto': o['monto']})
 
-            # 3. CIERRE CON TRAILING PROFIT (SIEMPRE EN GANANCIA)
+            # 3. CIERRE CON TRAILING
             pnl_actual = 0
             if st.session_state.posiciones:
                 t_inv = sum(p['monto'] for p in st.session_state.posiciones)
                 p_prom = sum(p['entrada'] for p in st.session_state.posiciones) / len(st.session_state.posiciones)
-                if st.session_state.direccion == "LONG":
+
+                if tendencia == "LONG":
                     pnl_actual = (precio_act / p_prom - 1) * t_inv * lev
                 else:
                     pnl_actual = (1 - precio_act / p_prom) * t_inv * lev
 
-                # Objetivo agresivo
                 if pnl_actual >= (t_inv * tp_objetivo * lev):
                     if pnl_actual > st.session_state.max_pnl_alcanzado:
                         st.session_state.max_pnl_alcanzado = pnl_actual
 
-                    # Trailing: si retrocede 2% desde el máximo, cierra
                     if pnl_actual < (st.session_state.max_pnl_alcanzado * 0.98):
-                        if exchange:  # Cierre en REAL
-                            side = 'sell' if st.session_state.direccion == "LONG" else 'buy'
+                        if exchange:
+                            side = 'sell' if tendencia == "LONG" else 'buy'
                             exchange.create_market_order(par, side, t_inv / precio_act)
 
                         st.session_state.historial_pnl.append({
                             'Fecha': datetime.now().strftime("%H:%M:%S"),
-                            'Tipo': st.session_state.direccion,
+                            'Tipo': tendencia,
                             'Ganancia': round(pnl_actual, 4)
                         })
                         st.session_state.saldo_demo += (t_inv + pnl_actual)
@@ -238,63 +268,51 @@ else:
                         st.session_state.ordenes_malla = []
                         st.session_state.max_pnl_alcanzado = 0.0
                         st.rerun()
-
-            # 4. HEDGING DINÁMICO (CAMBIO DE DIRECCIÓN EN PERDIDA CONTROLADA)
-            if hedging and st.session_state.posiciones and pnl_actual < 0:
-                # Si RSI se da vuelta fuerte contra la posición, resetea y cambia de lado
-                if (st.session_state.direccion == "LONG" and rsi_val < 40) or \
-                   (st.session_state.direccion == "SHORT" and rsi_val > 60):
-                    st.session_state.posiciones = []
-                    st.session_state.ordenes_malla = []
-                    st.session_state.max_pnl_alcanzado = 0.0
-                    st.session_state.direccion = "SHORT" if st.session_state.direccion == "LONG" else "LONG"
-
-            # 5. CIERRE POR BLOQUE (GANANCIA TOTAL POSITIVA)
-            if cierre_bloque and st.session_state.ganancia_total > 0 and st.session_state.posiciones:
-                t_inv = sum(p['monto'] for p in st.session_state.posiciones)
-                p_prom = sum(p['entrada'] for p in st.session_state.posiciones) / len(st.session_state.posiciones)
-                if st.session_state.direccion == "LONG":
-                    pnl_actual = (precio_act / p_prom - 1) * t_inv * lev
-                else:
-                    pnl_actual = (1 - precio_act / p_prom) * t_inv * lev
-
-                if pnl_actual > 0:
-                    if exchange:
-                        side = 'sell' if st.session_state.direccion == "LONG" else 'buy'
-                        exchange.create_market_order(par, side, t_inv / precio_act)
-
-                    st.session_state.historial_pnl.append({
-                        'Fecha': datetime.now().strftime("%H:%M:%S"),
-                        'Tipo': st.session_state.direccion,
-                        'Ganancia': round(pnl_actual, 4)
-                    })
-                    st.session_state.saldo_demo += (t_inv + pnl_actual)
-                    st.session_state.ganancia_total += pnl_actual
-                    st.session_state.posiciones = []
-                    st.session_state.ordenes_malla = []
-                    st.session_state.max_pnl_alcanzado = 0.0
-                    st.rerun()
-
-            # --- UI MÉTRICAS ---
+                        # --- MÉTRICAS ---
             c1, c2, c3 = st.columns(3)
-            c1.metric(f"Precio ({st.session_state.direccion})", f"${precio_act:,.4f}")
-            c2.metric("Wallet DEMO", f"${st.session_state.saldo_demo:,.2f}")
-            c3.metric("PNL Total", f"${st.session_state.ganancia_total:,.2f}", delta=f"RSI: {rsi_val:.1f}")
 
-            # --- GRÁFICO VIVO PRECIO + RSI ---
-            st.markdown("### 📈 Gráfico de Precio + RSI")
+            delta_color = "green" if pnl_actual >= 0 else "red"
+
+            c1.metric(
+                f"Precio ({tendencia})",
+                f"${precio_act:,.4f}",
+                delta=f"RSI: {rsi_val:.1f}",
+                delta_color="off"
+            )
+            c2.metric(
+                "Wallet DEMO",
+                f"${st.session_state.saldo_demo:,.2f}",
+                delta=None
+            )
+            c3.metric(
+                "PNL Total",
+                f"${st.session_state.ganancia_total:,.2f}",
+                delta=f"{pnl_actual:.2f}",
+                delta_color=delta_color
+            )
+
+            # ============================================================
+            # GRÁFICO TÁCTICO T800: PRECIO + RSI + NIVELES + TP + EJECUCIONES
+            # ============================================================
+
+            st.markdown("### 📈 Gráfico Táctico T800")
 
             precios = st.session_state.precios_hist
+            ordenes = st.session_state.ordenes_malla
+            posiciones = st.session_state.posiciones
+
             if len(precios) > 1:
                 fig = go.Figure()
-                # Precio
+
+                # --- PRECIO ---
                 fig.add_trace(go.Scatter(
                     y=precios,
                     name="Precio",
                     mode="lines",
                     line=dict(color="#F0B90B", width=3)
                 ))
-                # RSI (recalculado incremental)
+
+                # --- RSI ---
                 rsi_series = [calcular_rsi(precios[:i]) for i in range(2, len(precios) + 1)]
                 fig.add_trace(go.Scatter(
                     y=rsi_series,
@@ -304,15 +322,60 @@ else:
                     line=dict(color="purple", width=1, dash="dot")
                 ))
 
+                # --- NIVELES DE ENTRADA ---
+                for o in ordenes:
+                    fig.add_hline(
+                        y=o["precio"],
+                        line=dict(color="cyan", width=1, dash="dash"),
+                        annotation_text=f"Nivel {o['id']}",
+                        annotation_position="top left"
+                    )
+
+                # --- TP POR NIVEL ---
+                if posiciones:
+                    for idx, p in enumerate(posiciones):
+                        entrada = p["entrada"]
+
+                        if tendencia == "LONG":
+                            tp_precio = entrada * (1 + tp_objetivo)
+                        else:
+                            tp_precio = entrada * (1 - tp_objetivo)
+
+                        fig.add_hline(
+                            y=tp_precio,
+                            line=dict(color="green", width=1, dash="dot"),
+                            annotation_text=f"TP {idx+1}",
+                            annotation_position="bottom left"
+                        )
+
+                # --- MARCAS DE EJECUCIÓN ---
+                if posiciones:
+                    for idx, p in enumerate(posiciones):
+                        fig.add_trace(go.Scatter(
+                            x=[len(precios)-1],
+                            y=[p["entrada"]],
+                            mode="markers+text",
+                            marker=dict(
+                                size=12,
+                                color="lime" if tendencia == "LONG" else "red",
+                                symbol="x"
+                            ),
+                            text=[f"EJ {idx+1}"],
+                            textposition="top center",
+                            name=f"Ejecución {idx+1}"
+                        ))
+
                 fig.update_layout(
-                    height=400,
+                    height=420,
                     template="plotly_dark",
                     margin=dict(l=0, r=0, b=0, t=0),
                     showlegend=True,
-                    yaxis=dict(title="Precio", side="left"),
-                    yaxis2=dict(title="RSI", overlaying="y", side="right", range=[0, 100])
+                    yaxis=dict(title="Precio", side="left", color="#6B8E23"),
+                    yaxis2=dict(title="RSI", overlaying="y", side="right", range=[0, 100], color="#6B8E23")
                 )
+
                 st.plotly_chart(fig, use_container_width=True)
+
             else:
                 st.info("Esperando datos de precio para dibujar el gráfico...")
 
@@ -339,5 +402,7 @@ else:
             st.error(f"Error: {e}")
             time.sleep(5)
             st.rerun()
+
     else:
         st.info("Bot T800 apagado. Activá el algoritmo para iniciar el escaneo táctico.")
+            
