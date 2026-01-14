@@ -470,40 +470,49 @@ else:
 
             st.session_state.posiciones = nuevas_posiciones
 
-            # --- CIERRE POR BLOQUE ---
-            if cierre_bloque and st.session_state.posiciones:
-                pnl_total_bloque = 0.0
-                for pos in st.session_state.posiciones:
-                    entrada = pos['entrada']
-                    monto = pos['monto']
-                    dir_pos = pos['dir']
-                    if dir_pos == "LONG":
-                        retorno_b = (precio_act / entrada) - 1
-                    else:
-                        retorno_b = 1 - (precio_act / entrada)
-                    pnl_total_bloque += retorno_b * monto * lev
+            # --- CIERRE POR BLOQUE (opcional) ---
+if cierre_bloque and st.session_state.posiciones:
+    pnl_total_bloque = 0.0
+    for pos in st.session_state.posiciones:
+        entrada = pos['entrada']
+        monto = pos['monto']
+        dir_pos = pos['dir']
 
-                if pnl_total_bloque > 0:
-                    for pos in st.session_state.posiciones:
-                        entrada = pos['entrada']
-                        monto = pos['monto']
-                        dir_pos = pos['dir']
-                        if dir_pos == "LONG":
-                            retorno_b = (precio_act / entrada) - 1
-                            side_close = 'sell'
-                        else:
-                            retorno_b = 1 - (precio_act / entrada)
-                            side_close = 'buy'
-                        pnl_nivel_b = retorno_b * monto * lev
+        if dir_pos == "LONG":
+            retorno_b = (precio_act / entrada) - 1
+        else:
+            retorno_b = 1 - (precio_act / entrada)
 
-                        if exchange:
-                            try:
-                                exchange.create_market_order(par, side_close, monto / precio_act)
-                            except Exception as ex:
-                                st.warning(f"Cierre real fallido (bloque): {ex}")
+        pnl_total_bloque += retorno_b * monto * lev
 
-                        st.session_state.saldo_demo += (monto + pnl_nivel_b)
-                        st.session_state.ganancia_total += pnl_nivel_b
-                        st.session_state.historial_pnl.append({)
-                            'Fecha': datetime.now().strftime("%H:%M:%S"),
-                            'Tipo': f"{dir_pos} - BLOQUE",
+    if pnl_total_bloque > 0:
+        for pos in st.session_state.posiciones:
+            entrada = pos['entrada']
+            monto = pos['monto']
+            dir_pos = pos['dir']
+
+            if dir_pos == "LONG":
+                retorno_b = (precio_act / entrada) - 1
+                side_close = 'sell'
+            else:
+                retorno_b = 1 - (precio_act / entrada)
+                side_close = 'buy'
+
+            pnl_nivel_b = retorno_b * monto * lev
+
+            if exchange:
+                try:
+                    exchange.create_market_order(par, side_close, monto / precio_act)
+                except Exception as ex:
+                    st.warning(f"Cierre real fallido (bloque): {ex}")
+
+            st.session_state.saldo_demo += (monto + pnl_nivel_b)
+            st.session_state.ganancia_total += pnl_nivel_b
+            st.session_state.historial_pnl.append({
+                'Fecha': datetime.now().strftime("%H:%M:%S"),
+                'Tipo': f"{dir_pos} - BLOQUE",
+                'Ganancia': round(pnl_nivel_b, 4)
+            })
+
+        st.session_state.posiciones = []
+        st.session_state.ordenes_malla = []
