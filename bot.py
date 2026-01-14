@@ -407,7 +407,7 @@ else:
             st.session_state.ordenes_malla = nuevas_ordenes
 
             # ============================
-            # GESTIÓN DE POSICIONES (SCALP + ESCAPE + BLOQUE)
+            # GESTIÓN DE POSICIONES
             # ============================
             nuevas_posiciones = []
             for pos in st.session_state.posiciones:
@@ -460,59 +460,183 @@ else:
                         'id_orden': pos['id_orden'],
                         'ts': datetime.now().strftime("%H:%M:%S")
                     })
-
-                    for o in st.session_state.ordenes_malla:
-                        if o['id'] == pos['id_orden'] and o['dir'] == dir_pos:
-                            o['estado'] = 'PENDIENTE'
-                            break
                 else:
                     nuevas_posiciones.append(pos)
 
             st.session_state.posiciones = nuevas_posiciones
 
             # --- CIERRE POR BLOQUE (opcional) ---
-if cierre_bloque and st.session_state.posiciones:
-    pnl_total_bloque = 0.0
-    for pos in st.session_state.posiciones:
-        entrada = pos['entrada']
-        monto = pos['monto']
-        dir_pos = pos['dir']
+            if cierre_bloque and st.session_state.posiciones:
+                pnl_total_bloque = 0.0
+                for pos in st.session_state.posiciones:
+                    entrada = pos['entrada']
+                    monto = pos['monto']
+                    dir_pos = pos['dir']
 
-        if dir_pos == "LONG":
-            retorno_b = (precio_act / entrada) - 1
-        else:
-            retorno_b = 1 - (precio_act / entrada)
+                    if dir_pos == "LONG":
+                        retorno_b = (precio_act / entrada) - 1
+                    else:
+                        retorno_b = 1 - (precio_act / entrada)
 
-        pnl_total_bloque += retorno_b * monto * lev
+                    pnl_total_bloque += retorno_b * monto * lev
 
-    if pnl_total_bloque > 0:
-        for pos in st.session_state.posiciones:
-            entrada = pos['entrada']
-            monto = pos['monto']
-            dir_pos = pos['dir']
+                if pnl_total_bloque > 0:
+                    for pos in st.session_state.posiciones:
+                        entrada = pos['entrada']
+                        monto = pos['monto']
+                        dir_pos = pos['dir']
 
-            if dir_pos == "LONG":
-                retorno_b = (precio_act / entrada) - 1
-                side_close = 'sell'
-            else:
-                retorno_b = 1 - (precio_act / entrada)
-                side_close = 'buy'
+                        if dir_pos == "LONG":
+                            retorno_b = (precio_act / entrada) - 1
+                            side_close = 'sell'
+                        else:
+                            retorno_b = 1 - (precio_act / entrada)
+                            side_close = 'buy'
 
-            pnl_nivel_b = retorno_b * monto * lev
+                        pnl_nivel_b = retorno_b * monto * lev
+
+                        if exchange:
+                            try:
+                                exchange.create_market_order(par, side_close, monto / precio_act)
+                            except Exception as ex:
+                                st.warning(f"Cierre real fallido (bloque): {ex}")
+
+                        st.session_state.saldo_demo += (monto + pnl_nivel_b)
+                        st.session_state.ganancia_total += pnl_nivel_b
+                        st.session_state.historial_pnl.append({
+                            'Fecha': datetime.now().strftime("%H:%M:%S"),
+                            'Tipo': f"{dir_pos} - BLOQUE",
+                            'Ganancia': round(pnl_nivel_b, 4)
+                        })
+
+                    st.session_state.posiciones = []
+                    st.session_state.ordenes_malla = []
+
+            # ============================
+            # MÉTRICAS
+            # ============================
+            c1, c2, c3 = st.columns(3)
+            c1.metric(f"Precio ({tendencia_calc})", f"${precio_act:,.4f}", f"RSI {rsi_use:.1f}")
 
             if exchange:
                 try:
-                    exchange.create_market_order(par, side_close, monto / precio_act)
-                except Exception as ex:
-                    st.warning(f"Cierre real fallido (bloque): {ex}")
+                    balance = exchange.fetch_balance()
+                    usdt_balance = balance["total"]["USDT"]
+                    c2.metric("💰 Wallet REAL", f"${usdt_balance:,.2f}")
+                except:
+                    c2.metric("💰 Wallet REAL", "Error")
+            else:
+                c2.metric("💰 Wallet DEMO", f"${st.session_state.saldo_demo:,.2f}")
 
-            st.session_state.saldo_demo += (monto + pnl_nivel_b)
-            st.session_state.ganancia_total += pnl_nivel_b
-            st.session_state.historial_pnl.append({
-                'Fecha': datetime.now().strftime("%H:%M:%S"),
-                'Tipo': f"{dir_pos} - BLOQUE",
-                'Ganancia': round(pnl_nivel_b, 4)
-            })
+            c3.metric("PNL Total", f"${st.session_state.ganancia_total:,.2f}")
 
-        st.session_state.posiciones = []
-        st.session_state.ordenes_malla = []
+            # ============================
+            # GRÁFICO TÁCTICO T800
+            # ============================
+            st.markdown("### 📈 Gráfico Táctico T800 (Precio, RSI, Niveles, TP, Ejecuciones)")
+
+            precios = st.session_state.precios_hist
+            ordenes = st.session_state.ordenes_malla
+            posiciones = st.session_state.posiciones
+            eventos = st.session_state.eventos
+
+            if len(precios) > 1:
+                fig = go.Figure()
+
+                fig.add_trace(go.Scatter(
+                    x=list(range(len(precios))),
+                    y=precios,
+                    name="Precio",
+                    mode="lines",
+                    line=dict(color="#F0B90B", width=3)
+                ))
+
+                fig.add_hline(
+                    y=precio_act,
+                    line=dict(color="white", width=1.5, dash="solid"),
+                    annotation_text="Precio actual",
+                    annotation_position="top right"
+                )
+
+                rsi_series = [calcular_rsi(precios[:i]) for i in range(2, len(precios) + 1)]
+                fig.add_trace(go.Scatter(
+                    x=list(range(2, len(precios) + 1)),
+                    y=rsi_series,
+                    name="RSI",
+                    mode="lines",
+                    yaxis="y2",
+                    line=dict(color="purple", width=1, dash="dot")
+                ))
+
+                for o in ordenes:
+                    fig.add_hline(
+                        y=o["precio"],
+                        line=dict(color="cyan", width=1, dash="dash"),
+                        annotation_text=f"Nivel {o['id']} ({o['dir']})",
+                        annotation_position="top left"
+                    )
+
+                for pos in posiciones:
+                    fig.add_hline(
+                        y=pos["tp_precio"],
+                        line=dict(color="green", width=1, dash="dot"),
+                        annotation_text=f"TP {pos['id_orden']}",
+                        annotation_position="bottom left"
+                    )
+
+                for ev in eventos:
+                    color_ev = "lime" if ev["tipo"].startswith("APERTURA") else "red"
+                    fig.add_trace(go.Scatter(
+                        x=[len(precios) - 1],
+                        y=[ev["precio"]],
+                        mode="markers+text",
+                        marker=dict(size=10, color=color_ev, symbol="x"),
+                        text=[f"{ev['tipo']} {ev['id_orden']}"],
+                        textposition="top center",
+                        name=f"{ev['tipo']} {ev['id_orden']}"
+                    ))
+
+                fig.update_layout(
+                    height=450,
+                    template="plotly_dark",
+                    margin=dict(l=0, r=0, b=0, t=0),
+                    showlegend=True,
+                    yaxis=dict(title="Precio", side="left", color="#3E4F1F"),
+                    yaxis2=dict(title="RSI", overlaying="y", side="right", range=[0, 100], color="#3E4F1F")
+                )
+
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("Esperando datos de precio para dibujar el gráfico...")
+
+            # ============================
+            # TABLAS
+            # ============================
+            st.subheader("📋 Malla de Operación (Órdenes abiertas)")
+            if st.session_state.ordenes_malla:
+                st.dataframe(pd.DataFrame(st.session_state.ordenes_malla), use_container_width=True)
+            else:
+                st.write("Sin órdenes en malla por el momento.")
+
+            st.subheader("📌 Posiciones abiertas")
+            if st.session_state.posiciones:
+                st.dataframe(pd.DataFrame(st.session_state.posiciones), use_container_width=True)
+            else:
+                st.write("Sin posiciones abiertas.")
+
+            st.subheader("📜 Historial de PnL")
+            if st.session_state.historial_pnl:
+                df_hist = pd.DataFrame(st.session_state.historial_pnl)
+                st.dataframe(df_hist.tail(50), use_container_width=True)
+            else:
+                st.write("Sin operaciones cerradas aún.")
+
+            time.sleep(delay)
+            st.rerun()
+
+        except Exception as e:
+            st.error(f"Error: {e}")
+            time.sleep(3)
+            st.rerun()
+    else:
+        st.info("Bot T800 apagado. Activá el algoritmo para iniciar el escaneo táctico.")
