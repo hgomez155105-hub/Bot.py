@@ -572,7 +572,56 @@ if len(st.session_state.estado["precios"]) > 1 and len(st.session_state.estado["
     )
 
     st.plotly_chart(fig, use_container_width=True)
+# ============================================================
+# GUARDAR PRECIO SIEMPRE — FUERA DEL MOTOR
+# ============================================================
 
+if precio_actual:
+    st.session_state.estado["precios"].append(precio_actual)
+    if len(st.session_state.estado["precios"]) > 500:
+        st.session_state.estado["precios"].pop(0)
+
+# ============================================================
+# GRÁFICO PRECIO + RSI
+# ============================================================
+
+st.markdown("### 📈 Gráfico de Precio + RSI")
+
+if len(st.session_state.estado["precios"]) > 0 and len(st.session_state.estado["rsi_hist"]) > 0:
+    fig = go.Figure()
+
+    fig.add_trace(go.Scatter(
+        y=st.session_state.estado["precios"],
+        mode="lines",
+        name="Precio",
+        line=dict(color="yellow", width=2)
+    ))
+
+    fig.add_trace(go.Scatter(
+        y=st.session_state.estado["rsi_hist"],
+        mode="lines",
+        name="RSI",
+        yaxis="y2",
+        line=dict(color="purple", width=1, dash="dot")
+    ))
+
+    fig.update_layout(
+        yaxis=dict(title="Precio", side="left"),
+        yaxis2=dict(title="RSI", overlaying="y", side="right", range=[0, 100]),
+        margin=dict(l=40, r=40, t=20, b=20),
+        template="plotly_dark"
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
+else:
+    st.info("Esperando datos para mostrar el gráfico...")
+
+# ============================================================
+# BOTÓN DE REFRESCO MANUAL
+# ============================================================
+
+if st.button("🔄 Refrescar gráfico"):
+    st.experimental_rerun()
 # ============================================================
 # TABLA DE MALLA
 # ============================================================
