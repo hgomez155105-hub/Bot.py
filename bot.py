@@ -288,7 +288,6 @@ else:
 except Exception as e:
     c2.metric("💰 Wallet REAL", "Error", delta=None)
     st.warning("No se pudo obtener el saldo REAL. Verificá tus claves o conexión.")
-            
             c3.metric(
                 "PNL Total",
                 f"${st.session_state.ganancia_total:,.2f}",
