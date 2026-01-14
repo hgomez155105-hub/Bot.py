@@ -284,21 +284,20 @@ tendencia = st.session_state.estado["direccion"]
 volatilidad = 0.0
 
 if bot_on:
-    # 1) PRECIO ACTUAL
-    try:
-        r = requests.get(
-            f"https://min-api.cryptocompare.com/data/price?fsym={par.split('/')[0]}&tsyms=USD"
-        ).json()
-        precio_actual = float(r["USD"])
-    except Exception as e:
-        st.error(f"No se pudo obtener el precio: {e}")
-        st.stop()
+    # motor táctico
+# ============================================================
+# PRECIO SIEMPRE ACTUALIZADO
+# ============================================================
 
-    precios = st.session_state.estado["precios"]
-    precios.append(precio_actual)
-    if len(precios) > 500:
-        precios.pop(0)
-
+try:
+    r = requests.get(
+        f"https://min-api.cryptocompare.com/data/price?fsym={par.split('/')[0]}&tsyms=USD"
+    ).json()
+    precio_actual = float(r["USD"])
+except Exception as e:
+    st.error(f"No se pudo obtener el precio: {e}")
+    precio_actual = None
+    
     # 2) VOLATILIDAD / TORMENTA
     precio_ant = st.session_state.estado["ultimo_precio"]
     st.session_state.estado["ultimo_precio"] = precio_actual
