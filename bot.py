@@ -80,17 +80,17 @@ st.sidebar.image(LOGO_URL, width=150)
 # ============================
 # FUNCIÓN DE CONEXIÓN A PIONEX
 # ============================
-def conectar_pionex(api_key, secret_key):
+def obtener_top_20_pionex():
     try:
-        exchange = ccxt.pionex({
-            'apiKey': api_key,
-            'secret': secret_key,
-            'enableRateLimit': True
-        })
-        return exchange
-    except Exception as e:
-        print("Error conectando a Pionex:", e)
-        return None
+        url = "https://api.binance.com/api/v3/ticker/24hr"
+        res = requests.get(url).json()
+        df_vol = pd.DataFrame(res)
+        df_vol = df_vol[df_vol['symbol'].str.endswith('USDT')]
+        df_vol['quoteVolume'] = df_vol['quoteVolume'].astype(float)
+        top_20 = df_vol.sort_values(by='quoteVolume', ascending=False).head(20)
+        return [f"{s[:-4]}/USDT" for s in top_20['symbol']]
+    except:
+        return ["BTC/USDT", "ETH/USDT", "SOL/USDT", "FET/USDT"]
 
 # ============================
 # LOGIN
