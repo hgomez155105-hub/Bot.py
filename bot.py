@@ -173,6 +173,23 @@ with st.sidebar:
 
     st.divider()
 
+    # ============================
+    # MODO DEMO / REAL
+    # ============================
+    st.subheader("🧪 Modo de ejecución")
+    modo_demo = st.radio("Seleccioná el modo:", ["DEMO", "REAL"])
+    st.session_state.modo_demo = modo_demo
+
+    if modo_demo == "DEMO":
+        st.info("🧪 MODO DEMO: Se usa precio real de Pionex, pero NO se envían órdenes reales.")
+    else:
+        st.warning("⚠️ MODO REAL: Se enviarán órdenes reales a Pionex.")
+
+    st.divider()
+
+    # ============================
+    # CONEXIÓN A PIONEX
+    # ============================
     st.subheader("🔌 Conexión a Pionex")
     api_k = st.text_input("API Key", type="password")
     api_s = st.text_input("Secret Key", type="password")
@@ -225,7 +242,7 @@ with st.sidebar:
         st.session_state.ordenes_malla = []
         st.session_state.eventos = []
         st.rerun()
-        # ============================
+# ============================
 # FUNCIONES TÉCNICAS
 # ============================
 def calcular_rsi(precios, periodo=14):
@@ -265,7 +282,7 @@ if st.button("Ejecutar T800", use_container_width=True):
 
     exchange = st.session_state.exchange
 
-    # PRECIO REAL DE PIONEX (SIN FALLBACK)
+    # PRECIO REAL DE PIONEX
     try:
         ticker = exchange.fetch_ticker(par.replace("/", ""))
         precio_act = float(ticker["last"])
@@ -332,14 +349,19 @@ if st.button("Ejecutar T800", use_container_width=True):
                 hit = hit and (rsi_use > 20 and micro_pico >= sensibilidad)
 
         if hit:
-            # ORDEN REAL
-            side = 'buy' if dir_o == "LONG" else 'sell'
-            try:
-                exchange.create_market_order(par, side, o['monto'] / precio_act)
-            except:
-                pass
 
-            # ORDEN DEMO
+            # ============================
+            # MODO REAL → ENVÍA ORDEN
+            # MODO DEMO → NO ENVÍA
+            # ============================
+            if st.session_state.modo_demo == "REAL":
+                side = 'buy' if dir_o == "LONG" else 'sell'
+                try:
+                    exchange.create_market_order(par, side, o['monto'] / precio_act)
+                except:
+                    st.warning("⚠️ Error enviando orden real.")
+
+            # ORDEN DEMO (siempre)
             st.session_state.saldo_demo -= o['monto']
             o['estado'] = 'EJECUTADA'
 
@@ -387,11 +409,16 @@ if st.button("Ejecutar T800", use_container_width=True):
 
         if pnl_nivel > 0 and (tp_hit or escape_ganancia):
 
-            side_close = 'sell' if dir_pos == "LONG" else 'buy'
-            try:
-                exchange.create_market_order(par, side_close, monto / precio_act)
-            except:
-                pass
+            # ============================
+            # MODO REAL → ENVÍA ORDEN
+            # MODO DEMO → NO ENVÍA
+            # ============================
+            if st.session_state.modo_demo == "REAL":
+                side_close = 'sell' if dir_pos == "LONG" else 'buy'
+                try:
+                    exchange.create_market_order(par, side_close, monto / precio_act)
+                except:
+                    st.warning("⚠️ Error cerrando orden real.")
 
             st.session_state.saldo_demo += (monto + pnl_nivel)
             st.session_state.ganancia_total += pnl_nivel
