@@ -192,6 +192,8 @@ with st.sidebar:
             st.error(f"❌ Error al conectar: {e}")
 
     st.divider()
+    st.write("DEBUG EXCHANGE:", st.session_state.get("exchange", None))
+    st.write("DEBUG USDT_BALANCE:", st.session_state.get("usdt_balance", None))
 
     # --------------------------
     # CONFIGURACIÓN DE RIESGO
