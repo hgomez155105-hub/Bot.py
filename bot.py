@@ -121,7 +121,6 @@ section[data-testid="stSidebar"] {{
 st.sidebar.image(LOGO_URL, width=150)
 
 # ============================
-# ============================
 # LOGIN
 # ============================
 if not st.session_state.autenticado:
@@ -139,8 +138,9 @@ if not st.session_state.autenticado:
         else:
             st.error("Acceso denegado")
 
-    st.stop()
-                # ============================
+    st.stop()  # ⬅️ acá corta si NO está autenticado
+
+# ============================
 # ESTADO INICIAL
 # ============================
 if 'saldo_demo' not in st.session_state:
@@ -165,12 +165,16 @@ if 'saldo_demo' not in st.session_state:
 # HEADER
 # ============================
 c_h1, c_h2 = st.columns([4, 1])
-c_h1.markdown(
-    f"## 🤖 BOT T800 - "
-    f"<span class='user-tag'>👤 {st.session_state.user_name}</span>",
-    unsafe_allow_html=True
-)
-c_h2.image(LOGO_URL, width=70)
+
+with c_h1:
+    st.markdown(
+        f"## 🤖 BOT T800 - "
+        f"<span class='user-tag'>👤 {st.session_state.user_name}</span>",
+        unsafe_allow_html=True
+    )
+
+with c_h2:
+    st.image(LOGO_URL, width=70)
 
 # ============================
 # SIDEBAR
