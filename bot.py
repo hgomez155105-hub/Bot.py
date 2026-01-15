@@ -6,21 +6,38 @@ import plotly.graph_objects as go
 import numpy as np
 from datetime import datetime
 import ccxt
+
 # ============================
-# FUNCIÓN DE CONEXIÓN A PIONEX
+# INICIALIZACIÓN DE SESSION_STATE
+# ============================
+if 'autenticado' not in st.session_state:
+    st.session_state.autenticado = False
+
+if 'user_name' not in st.session_state:
+    st.session_state.user_name = "Invitado"
+
+# ============================
+# FUNCIÓN DE CONEXIÓN A PIONEX (CORREGIDA)
 # ============================
 def conectar_pionex(api_key, secret_key):
     try:
         exchange = ccxt.pionex({
             'apiKey': api_key,
             'secret': secret_key,
-            'enableRateLimit': True
+            'enableRateLimit': True,
+            'options': {
+                'defaultType': 'spot'
+            }
         })
+        exchange.load_markets()
         return exchange
     except Exception as e:
         print("Error conectando a Pionex:", e)
         return None
 
+# ============================
+# TOP 20 PARES
+# ============================
 def obtener_top_20_pionex():
     try:
         url = "https://api.binance.com/api/v3/ticker/24hr"
@@ -32,6 +49,7 @@ def obtener_top_20_pionex():
         return [f"{s[:-4]}/USDT" for s in top_20['symbol']]
     except:
         return ["BTC/USDT", "ETH/USDT", "SOL/USDT", "FET/USDT"]
+
 # ============================
 # CONFIGURACIÓN DE ACCESO (GOOGLE SHEETS)
 # ============================
@@ -61,7 +79,7 @@ st.set_page_config(
 )
 
 # ============================
-# TEMA MILITAR ARENA PREDADOR
+# TEMA MILITAR ARENA
 # ============================
 st.markdown(f"""
 <style>
@@ -103,25 +121,25 @@ section[data-testid="stSidebar"] {{
 st.sidebar.image(LOGO_URL, width=150)
 
 # ============================
+# ============================
 # LOGIN
 # ============================
-if 'autenticado' not in st.session_state:
-    st.session_state.autenticado = False
-
 if not st.session_state.autenticado:
-    col1, col2, col3 = st.columns([1, 1.5, 1])
-    with col2:
-        st.image(LOGO_URL, width=200)
-        st.markdown("<h2 style='text-align: center;'>Acceso Táctico T800</h2>", unsafe_allow_html=True)
-        u = st.text_input("Usuario")
-        p = st.text_input("Contraseña", type="password")
-        if st.button("ACCEDER AL SISTEMA", use_container_width=True):
-            if verificar_acceso(u, p):
-                st.session_state.autenticado = True
-                st.session_state.user_name = u
-                st.rerun()
-            else:
-                st.error("Acceso denegado. Verifique su base de datos en Sheets.")
+    st.markdown("## 🔐 Acceso Táctico T800")
+
+    usuario = st.text_input("Usuario")
+    clave = st.text_input("Contraseña", type="password")
+
+    if st.button("ACCEDER AL SISTEMA"):
+        if verificar_acceso(usuario, clave):
+            st.session_state.autenticado = True
+            st.session_state.user_name = usuario
+            st.success("Acceso concedido")
+            st.rerun()
+        else:
+            st.error("Acceso denegado")
+
+    st.stop()
                 # ============================
 # ESTADO INICIAL
 # ============================
@@ -159,11 +177,11 @@ c_h2.image(LOGO_URL, width=70)
 # ============================
 with st.sidebar:
 
-    # --------------------------
-    # PAR DE TRADING
-    # --------------------------
     st.subheader("🎯 Objetivo")
     par = st.selectbox("Par (Pionex):", obtener_top_20_pionex())
+
+    if 'ultimo_par' not in st.session_state:
+        st.session_state.ultimo_par = par
 
     if par != st.session_state.ultimo_par:
         st.session_state.update({
@@ -186,25 +204,30 @@ with st.sidebar:
     api_s = st.text_input("Secret Key", type="password", key="api_s")
 
     if st.button("🔌 Conectar a Pionex", use_container_width=True):
-        try:
-            exchange = conectar_pionex(api_k, api_s)
-            balance = exchange.fetch_balance()
-            usdt_balance = balance["total"]["USDT"]
+        exchange = conectar_pionex(api_k, api_s)
 
-            st.session_state.exchange = exchange
-            st.session_state.usdt_balance = usdt_balance
-
-            st.success(f"✅ Conectado a Pionex | Saldo USDT: ${usdt_balance:,.2f}")
-
-        except Exception as e:
+        if exchange is None:
             st.session_state.exchange = None
             st.session_state.usdt_balance = None
-            st.error(f"❌ Error al conectar: {e}")
+            st.error("❌ No se pudo conectar a Pionex. Revisá claves o permisos API.")
+        else:
+            try:
+                balance = exchange.fetch_balance()
+                usdt_balance = balance["total"]["USDT"]
+
+                st.session_state.exchange = exchange
+                st.session_state.usdt_balance = usdt_balance
+
+                st.success(f"✅ Conectado a Pionex | Saldo USDT: ${usdt_balance:,.2f}")
+
+            except Exception as e:
+                st.session_state.exchange = None
+                st.session_state.usdt_balance = None
+                st.error(f"❌ Error al leer balance: {e}")
 
     st.divider()
     st.write("DEBUG EXCHANGE:", st.session_state.get("exchange", None))
     st.write("DEBUG USDT_BALANCE:", st.session_state.get("usdt_balance", None))
-
     # --------------------------
     # CONFIGURACIÓN DE RIESGO
     # --------------------------
