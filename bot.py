@@ -74,18 +74,25 @@ st.sidebar.image(LOGO_URL, width=150)
 # ============================
 def conectar_pionex(api_key, secret_key):
     try:
-        exchange = ccxt.pionex({
-            'apiKey': api_key,
-            'secret': secret_key,
+        # Algunas instalaciones usan "pionex", otras "pionexcom"
+        if hasattr(ccxt, "pionex"):
+            exchange_class = ccxt.pionex
+        else:
+            exchange_class = ccxt.pionexcom
+
+        exchange = exchange_class({
+            'apiKey': api_key.strip(),
+            'secret': secret_key.strip(),
             'enableRateLimit': True,
             'options': {'defaultType': 'spot'}
         })
+
         exchange.load_markets()
         return exchange
+
     except Exception as e:
         print("Error conectando a Pionex:", e)
         return None
-
 # ============================
 # TOP 20 PARES (BINANCE → PIONEX)
 # ============================
