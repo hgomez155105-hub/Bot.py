@@ -59,11 +59,9 @@ st.set_page_config(
 # ============================
 try:
     delay = 5  # segundos
-    time.sleep(delay)
     st.rerun()
 except Exception as e:
     st.error(f"Error: {e}")
-    time.sleep(3)
     st.rerun()
 else:
     st.info("Bot T800 apagado. Activá el algoritmo para iniciar el escaneo táctico.")
