@@ -8,8 +8,18 @@ from streamlit_autorefresh import st_autorefresh
 
 st.set_page_config(page_title="Bot T800", page_icon="🤖", layout="wide")
 
-# Refresco automático cada 5 segundos
-st_autorefresh(interval=5000, key="refresh")
+# Refresco automático cada 5 segundos (una sola vez)
+st_autorefresh(interval=5000, key="refresh_main")
+
+# Inicialización de estado
+for key in ["autenticado", "user_name", "precios_hist", "ordenes_malla", "posiciones", "eventos", "historial_pnl"]:
+    if key not in st.session_state:
+        if key == "autenticado":
+            st.session_state[key] = False
+        elif key == "user_name":
+            st.session_state[key] = "Invitado"
+        else:
+            st.session_state[key] = []
 
 # ============================
 # TOP 20 PARES
