@@ -57,14 +57,10 @@ st.set_page_config(
 # ============================
 # LOOP (corregido)
 # ============================
-try:
-    delay = 5  # segundos
-    st.rerun()
-except Exception as e:
-    st.error(f"Error: {e}")
-    st.rerun()
-else:
-    st.info("Bot T800 apagado. Activá el algoritmo para iniciar el escaneo táctico.")
+from streamlit_autorefresh import st_autorefresh
+
+# Refresco automático cada 5 segundos
+st_autorefresh(interval=5000, key="refresh")
 
 # ============================
 # FUNCIÓN RSI
