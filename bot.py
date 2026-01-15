@@ -1,66 +1,21 @@
-import time
 import streamlit as st
 import pandas as pd
 import requests
 import plotly.graph_objects as go
 import numpy as np
 import ccxt
+import time  # <-- agregado
 
-# ============================
-# CONFIGURACIÓN DE LA PÁGINA
-# ============================
+from streamlit_autorefresh import st_autorefresh
+
 st.set_page_config(
     page_title="Bot T800",
     page_icon="🤖",
     layout="wide"
 )
 
-# ============================
-# INICIALIZACIÓN DE SESSION_STATE
-# ============================
-if 'autenticado' not in st.session_state:
-    st.session_state.autenticado = False
-
-if 'user_name' not in st.session_state:
-    st.session_state.user_name = "Invitado"
-
-for key in ["precios_hist", "ordenes_malla", "posiciones", "eventos", "historial_pnl"]:
-    if key not in st.session_state:
-        st.session_state[key] = []
-
-# ============================
-# FUNCIÓN DE CONEXIÓN A PIONEX
-# ============================
-def conectar_pionex(api_key, secret_key):
-    try:
-        exchange = ccxt.pionex({
-            'apiKey': api_key,
-            'secret': secret_key,
-            'enableRateLimit': True,
-            'options': {'defaultType': 'spot'}
-        })
-        markets = exchange.load_markets()
-        if not markets:
-            st.error("No se pudieron cargar los mercados de Pionex.")
-            return None
-        st.success("Conectado a Pionex correctamente ✅")
-        return exchange
-    except Exception as e:
-        st.error(f"Error conectando a Pionex: {e}")
-        return None
-
-# ============================
-# FUNCIÓN RSI
-# ============================
-def calcular_rsi(series, period=14):
-    if len(series) < period:
-        return np.nan
-    deltas = np.diff(series)
-    seed = deltas[:period]
-    up = seed[seed >= 0].sum() / period
-    down = -seed[seed < 0].sum() / period
-    rs = up / down if down != 0 else 0
-    return 100 - (100 / (1 + rs))
+# Refresco automático cada 5 segundos
+st_autorefresh(interval=5000, key="refresh")
 
 # ============================
 # TOP 20 PARES
