@@ -225,8 +225,7 @@ with st.sidebar:
         st.session_state.ordenes_malla = []
         st.session_state.eventos = []
         st.rerun()
-
-# ============================
+        # ============================
 # FUNCIONES TÉCNICAS
 # ============================
 def calcular_rsi(precios, periodo=14):
@@ -407,22 +406,24 @@ if st.button("Ejecutar T800", use_container_width=True):
             nuevas_posiciones.append(pos)
 
     st.session_state.posiciones = nuevas_posiciones
-
+    # ============================
+# GRÁFICO TÁCTICO T800
 # ============================
-# GRÁFICO TÁCTICO
-# ============================
-st.markdown("### 📈 Gráfico Táctico T800")
+st.markdown("### 📈 Gráfico Táctico T800 (Precio, RSI, Niveles, TP, Ejecuciones)")
 
 precios = st.session_state.precios_hist
 
 if len(precios) > 1:
     fig = go.Figure()
+
+    # Precio
     fig.add_trace(go.Scatter(
         y=precios,
         name="Precio",
         line=dict(color="#F0B90B", width=3)
     ))
 
+    # RSI
     if st.session_state.rsi_hist:
         fig.add_trace(go.Scatter(
             y=st.session_state.rsi_hist,
@@ -431,9 +432,40 @@ if len(precios) > 1:
             yaxis="y2"
         ))
 
+    # Líneas de malla
+    if st.session_state.ordenes_malla:
+        for o in st.session_state.ordenes_malla:
+            color = "gray" if o["estado"] == "PENDIENTE" else "#F39C12"
+            fig.add_hline(
+                y=o["precio"],
+                line=dict(color=color, width=1, dash="dot"),
+                opacity=0.3
+            )
+
+    # Entradas y TP
+    if st.session_state.posiciones:
+        x_idx = [len(precios) - 1] * len(st.session_state.posiciones)
+
+        fig.add_trace(go.Scatter(
+            x=x_idx,
+            y=[p["entrada"] for p in st.session_state.posiciones],
+            mode="markers",
+            name="Entradas",
+            marker=dict(color="cyan", size=9, symbol="triangle-up")
+        ))
+
+        fig.add_trace(go.Scatter(
+            x=x_idx,
+            y=[p["tp_precio"] for p in st.session_state.posiciones],
+            mode="markers",
+            name="TP",
+            marker=dict(color="lime", size=8, symbol="x")
+        ))
+
     fig.update_layout(
         height=450,
         template="plotly_dark",
+        margin=dict(l=0, r=0, b=0, t=10),
         yaxis=dict(title="Precio"),
         yaxis2=dict(
             title="RSI",
@@ -444,17 +476,28 @@ if len(precios) > 1:
     )
 
     st.plotly_chart(fig, use_container_width=True)
+
 else:
-    st.info("Esperando datos para dibujar el gráfico...")
+    st.info("Esperando datos de precio para dibujar el gráfico...")
 
 # ============================
 # TABLAS
 # ============================
-st.subheader("📋 Malla de Operación")
-st.dataframe(st.session_state.ordenes_malla, use_container_width=True)
+
+st.subheader("📋 Malla de Operación (Órdenes abiertas)")
+if st.session_state.ordenes_malla:
+    st.dataframe(st.session_state.ordenes_malla, use_container_width=True)
+else:
+    st.info("Sin órdenes en malla por el momento.")
 
 st.subheader("📌 Posiciones abiertas")
-st.dataframe(st.session_state.posiciones, use_container_width=True)
+if st.session_state.posiciones:
+    st.dataframe(st.session_state.posiciones, use_container_width=True)
+else:
+    st.info("Sin posiciones abiertas.")
 
 st.subheader("📜 Historial de PnL")
-st.dataframe(st.session_state.historial_pnl, use_container_width=True)
+if st.session_state.historial_pnl:
+    st.dataframe(st.session_state.historial_pnl, use_container_width=True)
+else:
+    st.info("Sin operaciones cerradas aún.")
