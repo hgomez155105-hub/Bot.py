@@ -4,15 +4,9 @@ import requests
 import plotly.graph_objects as go
 import numpy as np
 import ccxt
-import time  # <-- agregado
-
 from streamlit_autorefresh import st_autorefresh
 
-st.set_page_config(
-    page_title="Bot T800",
-    page_icon="🤖",
-    layout="wide"
-)
+st.set_page_config(page_title="Bot T800", page_icon="🤖", layout="wide")
 
 # Refresco automático cada 5 segundos
 st_autorefresh(interval=5000, key="refresh")
