@@ -16,6 +16,10 @@ if 'autenticado' not in st.session_state:
 if 'user_name' not in st.session_state:
     st.session_state.user_name = "Invitado"
 
+for key in ["precios_hist", "ordenes_malla", "posiciones", "eventos", "historial_pnl"]:
+    if key not in st.session_state:
+        st.session_state[key] = []
+
 # ============================
 # FUNCIÓN DE CONEXIÓN A PIONEX (CORREGIDA)
 # ============================
@@ -29,10 +33,12 @@ def conectar_pionex(api_key, secret_key):
                 'defaultType': 'spot'
             }
         })
-        exchange.load_markets()
+        markets = exchange.load_markets()
+        if not markets:
+            raise Exception("No se pudieron cargar los mercados de Pionex.")
         return exchange
     except Exception as e:
-        print("Error conectando a Pionex:", e)
+        st.error(f"Error conectando a Pionex: {e}")
         return None
 
 # ============================
@@ -73,556 +79,39 @@ def verificar_acceso(u, p):
 LOGO_URL = "https://raw.githubusercontent.com/hgomez155105-hub/Bot.py/main/1000266017.png"
 
 st.set_page_config(
-    page_title="BOT T800 - H y G Inovaciones",
-    layout="wide",
-    page_icon="🤖"
+    page_title="Bot T800",
+    page_icon="🤖",
+    layout="wide"
 )
 
 # ============================
-# TEMA MILITAR ARENA
+# LOOP (corregido)
 # ============================
-st.markdown(f"""
-<style>
-.stApp {{
-    background-color: #F2E3C6 !important;
-    color: #111111 !important;
-}}
-h1, h2, h3, h4, h5, h6 {{
-    color: #3E4F1F !important;
-    font-weight: 800 !important;
-}}
-section[data-testid="stSidebar"] {{
-    background-color: #E3D2AC !important;
-    color: #111111 !important;
-}}
-.user-tag {{
-    background: #D4C399;
-    padding: 5px 15px;
-    border-radius: 20px;
-    border: 1px solid #3E4F1F;
-    color: #111111;
-}}
-[data-testid="stMetricValue"] {{
-    color: #3E4F1F !important;
-    font-size: 1.8rem !important;
-    font-weight: 900 !important;
-}}
-.stDataFrame, .stTable {{
-    background-color: #FFFFFF !important;
-    color: #111111 !important;
-}}
-</style>
-<div style='text-align: center; margin-top: -30px;'>
-    <img src="{LOGO_URL}" width="120">
-    <h1>BOT T800 – H y G Inovaciones</h1>
-</div>
-""", unsafe_allow_html=True)
-
-st.sidebar.image(LOGO_URL, width=150)
-
-# ============================
-# LOGIN
-# ============================
-if not st.session_state.autenticado:
-    st.markdown("## 🔐 Acceso Táctico T800")
-
-    usuario = st.text_input("Usuario")
-    clave = st.text_input("Contraseña", type="password")
-
-    if st.button("ACCEDER AL SISTEMA"):
-        if verificar_acceso(usuario, clave):
-            st.session_state.autenticado = True
-            st.session_state.user_name = usuario
-            st.success("Acceso concedido")
-            st.rerun()
-        else:
-            st.error("Acceso denegado")
-
-    st.stop()  # ⬅️ acá corta si NO está autenticado
-
-# ============================
-# ESTADO INICIAL
-# ============================
-if 'saldo_demo' not in st.session_state:
-    st.session_state.update({
-        'saldo_demo': 1000.0,
-        'ganancia_total': 0.0,
-        'posiciones': [],
-        'precios_hist': [],
-        'ordenes_malla': [],
-        'ultimo_par': "",
-        'historial_pnl': [],
-        'direccion': 'LONG',
-        'ultimo_precio': None,
-        'rsi_hist': [],
-        'modo_tormenta_activo': False,
-        'eventos': [],
-        'exchange': None,
-        'usdt_balance': None
-    })
-
-# ============================
-# HEADER
-# ============================
-c_h1, c_h2 = st.columns([4, 1])
-
-with c_h1:
-    st.markdown(
-        f"## 🤖 BOT T800 - "
-        f"<span class='user-tag'>👤 {st.session_state.user_name}</span>",
-        unsafe_allow_html=True
-    )
-
-with c_h2:
-    st.image(LOGO_URL, width=70)
-
-# ============================
-# SIDEBAR
-# ============================
-with st.sidebar:
-
-    st.subheader("🎯 Objetivo")
-    par = st.selectbox("Par (Pionex):", obtener_top_20_pionex())
-
-    if 'ultimo_par' not in st.session_state:
-        st.session_state.ultimo_par = par
-
-    if par != st.session_state.ultimo_par:
-        st.session_state.update({
-            'precios_hist': [],
-            'posiciones': [],
-            'ordenes_malla': [],
-            'rsi_hist': [],
-            'ultimo_par': par,
-            'eventos': []
-        })
-
-    st.divider()
-
-    # --------------------------
-    # 🔌 CONEXIÓN A PIONEX
-    # --------------------------
-    st.subheader("🔌 Conexión a Pionex")
-
-    api_k = st.text_input("API Key", type="password", key="api_k")
-    api_s = st.text_input("Secret Key", type="password", key="api_s")
-
-    if st.button("🔌 Conectar a Pionex", use_container_width=True):
-        exchange = conectar_pionex(api_k, api_s)
-
-        if exchange is None:
-            st.session_state.exchange = None
-            st.session_state.usdt_balance = None
-            st.error("❌ No se pudo conectar a Pionex. Revisá claves o permisos API.")
-        else:
-            try:
-                balance = exchange.fetch_balance()
-                usdt_balance = balance["total"]["USDT"]
-
-                st.session_state.exchange = exchange
-                st.session_state.usdt_balance = usdt_balance
-
-                st.success(f"✅ Conectado a Pionex | Saldo USDT: ${usdt_balance:,.2f}")
-
-            except Exception as e:
-                st.session_state.exchange = None
-                st.session_state.usdt_balance = None
-                st.error(f"❌ Error al leer balance: {e}")
-
-    st.divider()
-    st.write("DEBUG EXCHANGE:", st.session_state.get("exchange", None))
-    st.write("DEBUG USDT_BALANCE:", st.session_state.get("usdt_balance", None))
-    # --------------------------
-    # CONFIGURACIÓN DE RIESGO
-    # --------------------------
-    st.subheader("⚙️ Configuración de riesgo/agresividad")
-
-    lev = st.slider("Apalancamiento virtual", 1, 50, 20)
-    niveles = st.number_input("Cantidad de Niveles por malla", 1, 50, 7)
-    distancia = st.slider("Distancia Malla (%)", 0.01, 1.0, 0.05, format="%.3f") / 100
-    inversion = st.number_input("Inversión Total por malla (USDT)", 10.0, 10000.0, 50.0)
-
-    tp_sensible = st.slider(
-        "Profit Objetivo por Nivel (%)",
-        0.01, 1.50, 0.05, format="%.3f"
-    ) / 100
-
-    st.divider()
-
-    # --------------------------
-    # RSI
-    # --------------------------
-    st.subheader("🎯 RSI (auto / manual)")
-    rsi_manual = st.slider("RSI Manual (0 = automático)", 0, 100, 0)
-
-    st.divider()
-
-    # --------------------------
-    # MODOS T800
-    # --------------------------
-    st.subheader("🧠 Modos T800")
-
-    hedging_on = st.checkbox("🌀 Hedging dinámico (LONG & SHORT)", value=True)
-    sniper_on = st.checkbox("🎯 Modo Sniper (micro-picos)", value=True)
-    tormenta_on = st.checkbox("🌩️ Modo Tormenta (alta volatilidad)", value=True)
-    cierre_bloque = st.checkbox("🧱 Cierre por bloque si PnL total > 0")
-    debug_on = st.checkbox("👀 Ver debug interno por nivel")
-
-    st.divider()
-
-    # --------------------------
-    # RESPUESTA A SALTOS
-    # --------------------------
-    st.subheader("⚡ Respuesta a saltos de precio")
-
-    salto_rapido = st.slider(
-        "Salto de precio para modo rápido (%)",
-        0.1, 2.0, 0.5, format="%.2f"
-    ) / 100
-
-    sleep_normal = st.slider("Delay normal (seg)", 0.2, 3.0, 0.7)
-    sleep_rapido = st.slider("Delay rápido (seg)", 0.03, 0.5, 0.12)
-
-    st.divider()
-
-    # --------------------------
-    # BOTÓN DE PÁNICO
-    # --------------------------
-    if st.button("🚨 BOTÓN DE PÁNICO", use_container_width=True):
-        st.session_state.update({
-            'posiciones': [],
-            'ordenes_malla': [],
-            'modo_tormenta_activo': False,
-            'eventos': []
-        })
-        st.rerun()
-        # ============================
-# MOTOR DEL BOT T800 (PIONEX)
-# ============================
-bot_on = st.toggle("🚀 ACTIVAR BOT T800 (PIONEX PREDADOR)")
-
-if bot_on:
-    try:
-        # ============================
-        # CONEXIÓN REAL (YA ESTABLECIDA)
-        # ============================
-        exchange = st.session_state.get("exchange", None)
-
-        # ============================
-        # PRECIO ACTUAL
-        # ============================
-        if exchange:
-            ticker = exchange.fetch_ticker(par.replace("/", ""))
-            precio_act = float(ticker["last"])
-        else:
-            base_symbol = par.split('/')[0]
-            res = requests.get(
-                f"https://min-api.cryptocompare.com/data/price?fsym={base_symbol}&tsyms=USD"
-            ).json()
-            precio_act = float(res['USD'])
-
-        # ============================
-        # CAMBIO DE PRECIO / MODO TORMENTA
-        # ============================
-        precio_anterior = st.session_state.ultimo_precio
-        st.session_state.ultimo_precio = precio_act
-
-        if precio_anterior is not None and precio_anterior > 0:
-            cambio_pct = abs(precio_act - precio_anterior) / precio_anterior
-        else:
-            cambio_pct = 0.0
-
-        if tormenta_on and cambio_pct >= salto_rapido:
-            st.session_state.modo_tormenta_activo = True
-            delay = sleep_rapido
-        else:
-            st.session_state.modo_tormenta_activo = False
-            delay = sleep_normal
-
-        # ============================
-        # HISTORIAL DE PRECIOS
-        # ============================
-        st.session_state.precios_hist.append(precio_act)
-        if len(st.session_state.precios_hist) > 300:
-            st.session_state.precios_hist.pop(0)
-
-        # ============================
-        # RSI
-        # ============================
-        rsi_real = calcular_rsi(st.session_state.precios_hist)
-        rsi_use = rsi_manual if rsi_manual != 0 else rsi_real
-
-        st.session_state.rsi_hist.append(rsi_use)
-        if len(st.session_state.rsi_hist) > 300:
-            st.session_state.rsi_hist.pop(0)
-
-        # ============================
-        # TENDENCIA
-        # ============================
-        tendencia_calc = obtener_tendencia(st.session_state.precios_hist, rsi_use)
-        st.session_state.direccion = tendencia_calc
-
-        # ============================
-        # ARMADO / ACTUALIZACIÓN DE MALLAS
-        # ============================
-        direcciones_malla = {o['dir'] for o in st.session_state.ordenes_malla} if st.session_state.ordenes_malla else set()
-
-        if hedging_on:
-            if st.session_state.direccion not in direcciones_malla:
-                monto_nivel = inversion / niveles
-                for i in range(niveles):
-                    if st.session_state.direccion == "LONG":
-                        factor = 1 - (i * distancia)
-                    else:
-                        factor = 1 + (i * distancia)
-
-                    st.session_state.ordenes_malla.append({
-                        'id': len(st.session_state.ordenes_malla) + 1,
-                        'precio': round(precio_act * factor, 4),
-                        'monto': round(monto_nivel, 2),
-                        'estado': 'PENDIENTE',
-                        'dir': st.session_state.direccion
-                    })
-        else:
-            st.session_state.ordenes_malla = [
-                o for o in st.session_state.ordenes_malla if o['dir'] == st.session_state.direccion
-            ]
-
-            if st.session_state.direccion not in direcciones_malla:
-                monto_nivel = inversion / niveles
-                for i in range(niveles):
-                    if st.session_state.direccion == "LONG":
-                        factor = 1 - (i * distancia)
-                    else:
-                        factor = 1 + (i * distancia)
-
-                    st.session_state.ordenes_malla.append({
-                        'id': len(st.session_state.ordenes_malla) + 1,
-                        'precio': round(precio_act * factor, 4),
-                        'monto': round(monto_nivel, 2),
-                        'estado': 'PENDIENTE',
-                        'dir': st.session_state.direccion
-                    })
-
-        # ============================
-        # EJECUCIÓN DE ÓRDENES DE MALLA
-        # ============================
-        nuevas_ordenes = []
-
-        for o in st.session_state.ordenes_malla:
-            if o['estado'] != 'PENDIENTE':
-                nuevas_ordenes.append(o)
-                continue
-
-            dir_o = o['dir']
-
-            if dir_o == "LONG":
-                hit = precio_act <= o['precio']
-            else:
-                hit = precio_act >= o['precio']
-
-            # SNIPER
-            if sniper_on and st.session_state.ultimo_precio is not None:
-                micro_pico = abs(precio_act - st.session_state.ultimo_precio) / max(st.session_state.ultimo_precio, 0.0001)
-                sensibilidad = max(0.0005, cambio_pct * 0.6)
-
-                if dir_o == "LONG":
-                    sniper_ok = (rsi_use < 80 and micro_pico >= sensibilidad)
-                else:
-                    sniper_ok = (rsi_use > 20 and micro_pico >= sensibilidad)
-
-                hit = hit and sniper_ok
-
-            if hit:
-                # ORDEN REAL
-                if exchange:
-                    side = 'buy' if dir_o == "LONG" else 'sell'
-                    try:
-                        exchange.create_market_order(par, side, o['monto'] / precio_act)
-                    except Exception as ex:
-                        st.warning(f"Orden real fallida (nivel {o['id']}): {ex}")
-
-                # ORDEN DEMO
-                st.session_state.saldo_demo -= o['monto']
-                o['estado'] = 'EJECUTADA'
-
-                tp_factor = tp_sensible * (0.7 if st.session_state.modo_tormenta_activo else 1.0)
-
-                if dir_o == "LONG":
-                    tp_price = precio_act * (1 + tp_factor)
-                else:
-                    tp_price = precio_act * (1 - tp_factor)
-
-                st.session_state.posiciones.append({
-                    'id_orden': o['id'],
-                    'entrada': precio_act,
-                    'monto': o['monto'],
-                    'tp_precio': tp_price,
-                    'dir': dir_o
-                })
-
-                st.session_state.eventos.append({
-                    'tipo': 'APERTURA',
-                    'precio': precio_act,
-                    'dir': dir_o,
-                    'id_orden': o['id'],
-                    'ts': datetime.now().strftime("%H:%M:%S")
-                })
-
-            nuevas_ordenes.append(o)
-
-        st.session_state.ordenes_malla = nuevas_ordenes
-
-        # ============================
-        # GESTIÓN DE POSICIONES
-        # ============================
-        nuevas_posiciones = []
-
-        for pos in st.session_state.posiciones:
-            entrada = pos['entrada']
-            monto = pos['monto']
-            tp_price = pos['tp_precio']
-            dir_pos = pos['dir']
-
-            if dir_pos == "LONG":
-                tp_hit = precio_act >= tp_price
-                retorno = (precio_act / entrada) - 1
-            else:
-                tp_hit = precio_act <= tp_price
-                retorno = 1 - (precio_act / entrada)
-
-            pnl_nivel = retorno * monto * lev
-
-            tendencia_contra = (
-                (dir_pos == "LONG" and tendencia_calc == "SHORT") or
-                (dir_pos == "SHORT" and tendencia_calc == "LONG")
-            )
-
-            escape_ganancia = pnl_nivel > 0 and tendencia_contra
-
-            if debug_on:
-                st.write(
-                    f"Nivel {pos['id_orden']} | Dir_pos: {dir_pos} | Tend_calc: {tendencia_calc} | "
-                    f"Entrada: {entrada:.4f} | TP: {tp_price:.4f} | Precio: {precio_act:.4f} | "
-                    f"Retorno: {retorno*100:.4f}% | PnL: {pnl_nivel:.4f} | "
-                    f"TP_hit: {tp_hit} | Escape_ganancia: {escape_ganancia}"
-                )
-
-            if pnl_nivel > 0 and (tp_hit or escape_ganancia):
-
-                # CIERRE REAL
-                if exchange:
-                    side_close = 'sell' if dir_pos == "LONG" else 'buy'
-                    try:
-                        exchange.create_market_order(par, side_close, monto / precio_act)
-                    except Exception as ex:
-                        st.warning(f"Cierre real fallido (nivel): {ex}")
-
-                # CIERRE DEMO
-                st.session_state.saldo_demo += (monto + pnl_nivel)
-                st.session_state.ganancia_total += pnl_nivel
-
-                st.session_state.historial_pnl.append({
-                    'Fecha': datetime.now().strftime("%H:%M:%S"),
-                    'Tipo': f"{dir_pos} - Nivel {pos['id_orden']}",
-                    'Ganancia': round(pnl_nivel, 4)
-                })
-
-                st.session_state.eventos.append({
-                    'tipo': 'CIERRE',
-                    'precio': precio_act,
-                    'dir': dir_pos,
-                    'id_orden': pos['id_orden'],
-                    'ts': datetime.now().strftime("%H:%M:%S")
-                })
-
-            else:
-                nuevas_posiciones.append(pos)
-
-        st.session_state.posiciones = nuevas_posiciones
-
-        # ============================
-        # CIERRE POR BLOQUE
-        # ============================
-        if cierre_bloque and st.session_state.posiciones:
-
-            pnl_total_bloque = 0.0
-
-            for pos in st.session_state.posiciones:
-                entrada = pos['entrada']
-                monto = pos['monto']
-                dir_pos = pos['dir']
-
-                if dir_pos == "LONG":
-                    retorno_b = (precio_act / entrada) - 1
-                else:
-                    retorno_b = 1 - (precio_act / entrada)
-
-                pnl_total_bloque += retorno_b * monto * lev
-
-            if pnl_total_bloque > 0:
-
-                for pos in st.session_state.posiciones:
-                    entrada = pos['entrada']
-                    monto = pos['monto']
-                    dir_pos = pos['dir']
-
-                    if dir_pos == "LONG":
-                        retorno_b = (precio_act / entrada) - 1
-                        side_close = 'sell'
-                    else:
-                        retorno_b = 1 - (precio_act / entrada)
-                        side_close = 'buy'
-
-                    pnl_nivel_b = retorno_b * monto * lev
-
-                    if exchange:
-                        try:
-                            exchange.create_market_order(par, side_close, monto / precio_act)
-                        except Exception as ex:
-                            st.warning(f"Cierre real fallido (bloque): {ex}")
-
-                    st.session_state.saldo_demo += (monto + pnl_nivel_b)
-                    st.session_state.ganancia_total += pnl_nivel_b
-
-                    st.session_state.historial_pnl.append({
-                        'Fecha': datetime.now().strftime("%H:%M:%S"),
-                        'Tipo': f"{dir_pos} - BLOQUE",
-                        'Ganancia': round(pnl_nivel_b, 4)
-                    })
-
-                st.session_state.posiciones = []
-                st.session_state.ordenes_malla = []
-
-        # ============================
-        # MÉTRICAS
-        # ============================
-        c1, c2, c3 = st.columns(3)
-
-        c1.metric(f"Precio ({tendencia_calc})", f"${precio_act:,.4f}", f"RSI {rsi_use:.1f}")
-
-        usdt_balance = st.session_state.get("usdt_balance", None)
-
-        if usdt_balance is not None:
-            c2.metric("💰 Wallet REAL", f"${usdt_balance:,.2f}")
-        else:
-            c2.metric("💰 Wallet DEMO", f"${st.session_state.saldo_demo:,.2f}")
-
-        c3.metric("PNL Total", f"${st.session_state.ganancia_total:,.2f}")
-
-        # ============================
-        # LOOP
-        # ============================
-        time.sleep(delay)
-        st.rerun()
-
-    except Exception as e:
-        st.error(f"Error: {e}")
-        time.sleep(3)
-        st.rerun()
+try:
+    delay = 5  # segundos
+    time.sleep(delay)
+    st.rerun()
+except Exception as e:
+    st.error(f"Error: {e}")
+    time.sleep(3)
+    st.rerun()
 else:
     st.info("Bot T800 apagado. Activá el algoritmo para iniciar el escaneo táctico.")
-    # ============================
+
+# ============================
+# FUNCIÓN RSI
+# ============================
+def calcular_rsi(series, period=14):
+    if len(series) < period:
+        return np.nan
+    deltas = np.diff(series)
+    seed = deltas[:period]
+    up = seed[seed >= 0].sum() / period
+    down = -seed[seed < 0].sum() / period
+    rs = up / down if down != 0 else 0
+    return 100 - (100 / (1 + rs))
+
+# ============================
 # GRÁFICO TÁCTICO T800
 # ============================
 st.markdown("### 📈 Gráfico Táctico T800 (Precio, RSI, Niveles, TP, Ejecuciones)")
@@ -681,7 +170,7 @@ if len(precios) > 1:
             annotation_position="bottom left"
         )
 
-    # Eventos (aperturas y cierres)
+    # Eventos
     for ev in eventos:
         color_ev = "lime" if ev["tipo"].startswith("APERTURA") else "red"
         fig.add_trace(go.Scatter(
