@@ -1,11 +1,18 @@
 import streamlit as st
 import pandas as pd
 import requests
-import time
 import plotly.graph_objects as go
 import numpy as np
-from datetime import datetime
 import ccxt
+
+# ============================
+# CONFIGURACIÓN DE LA PÁGINA
+# ============================
+st.set_page_config(
+    page_title="Bot T800",
+    page_icon="🤖",
+    layout="wide"
+)
 
 # ============================
 # INICIALIZACIÓN DE SESSION_STATE
@@ -21,7 +28,7 @@ for key in ["precios_hist", "ordenes_malla", "posiciones", "eventos", "historial
         st.session_state[key] = []
 
 # ============================
-# FUNCIÓN DE CONEXIÓN A PIONEX (CORREGIDA)
+# FUNCIÓN DE CONEXIÓN A PIONEX
 # ============================
 def conectar_pionex(api_key, secret_key):
     try:
@@ -29,17 +36,30 @@ def conectar_pionex(api_key, secret_key):
             'apiKey': api_key,
             'secret': secret_key,
             'enableRateLimit': True,
-            'options': {
-                'defaultType': 'spot'
-            }
+            'options': {'defaultType': 'spot'}
         })
         markets = exchange.load_markets()
         if not markets:
-            raise Exception("No se pudieron cargar los mercados de Pionex.")
+            st.error("No se pudieron cargar los mercados de Pionex.")
+            return None
+        st.success("Conectado a Pionex correctamente ✅")
         return exchange
     except Exception as e:
         st.error(f"Error conectando a Pionex: {e}")
         return None
+
+# ============================
+# FUNCIÓN RSI
+# ============================
+def calcular_rsi(series, period=14):
+    if len(series) < period:
+        return np.nan
+    deltas = np.diff(series)
+    seed = deltas[:period]
+    up = seed[seed >= 0].sum() / period
+    down = -seed[seed < 0].sum() / period
+    rs = up / down if down != 0 else 0
+    return 100 - (100 / (1 + rs))
 
 # ============================
 # TOP 20 PARES
